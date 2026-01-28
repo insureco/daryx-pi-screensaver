@@ -1,92 +1,135 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Clock</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@200;300;400&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
             background: #000;
             color: #fff;
             font-family: 'Exo 2', sans-serif;
             height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+        }
+        .container {
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            overflow: hidden;
+            height: 100vh;
+            padding: 20px;
         }
         .time {
-            font-size: 20vw;
-            font-weight: 200;
+            font-size: 18vw;
+            font-weight: 300;
             letter-spacing: -0.02em;
             line-height: 1;
         }
-        .seconds {
-            font-size: 8vw;
-            opacity: 0.4;
+        .time .seconds {
+            font-size: 6vw;
+            opacity: 0.5;
             vertical-align: super;
+            margin-left: 0.1em;
         }
         .date {
             font-size: 4vw;
-            font-weight: 300;
-            opacity: 0.6;
-            margin-top: 2vh;
+            font-weight: 400;
+            opacity: 0.7;
+            margin-top: 0.5em;
         }
-        .greeting {
-            font-size: 3vw;
-            font-weight: 300;
-            opacity: 0.4;
+        .stats {
+            display: flex;
+            gap: 3vw;
             margin-top: 4vh;
+            font-size: 2.8vw;
+            opacity: 0.6;
+        }
+        .stat {
+            display: flex;
+            align-items: center;
+            gap: 0.4em;
+        }
+        .weather-row {
+            display: flex;
+            gap: 3vw;
+            margin-top: 2vh;
+            font-size: 3vw;
+            opacity: 0.7;
+        }
+        .sun {
+            opacity: 0.5;
+            font-size: 2.5vw;
         }
     </style>
 </head>
 <body>
-    <div class="time">
-        <span id="hours">00</span>:<span id="minutes">00</span><span class="seconds" id="seconds">00</span>
+    <div class="container">
+        <div class="time">
+            <span id="hours">--</span>:<span id="minutes">--</span><span class="seconds" id="seconds">--</span>
+        </div>
+        <div class="date" id="date">Loading...</div>
+        <div class="weather-row">
+            <span id="weather">--</span>
+            <span class="sun">☀↑ <span id="sunrise">--</span></span>
+            <span class="sun">☀↓ <span id="sunset">--</span></span>
+        </div>
+        <div class="stats">
+            <span class="stat"><span class="stat-icon">🌡</span> <span id="cpu-temp">--</span>°</span>
+            <span class="stat"><span class="stat-icon">🛡</span> <span id="blocked">--</span></span>
+            <span class="stat"><span class="stat-icon">💾</span> <span id="mem">--</span>%</span>
+            <span class="stat"><span class="stat-icon">⏱</span> <span id="uptime">--</span></span>
+        </div>
     </div>
-    <div class="date" id="date">Loading...</div>
-    <div class="greeting" id="greeting"></div>
-
     <script>
-        function updateClock() {
+        function updateTime() {
             const now = new Date();
-            
             let hours = now.getHours();
-            const minutes = now.getMinutes().toString().padStart(2, '0');
-            const seconds = now.getSeconds().toString().padStart(2, '0');
-            
-            // 12-hour format
-            const ampm = hours >= 12 ? 'PM' : 'AM';
             hours = hours % 12 || 12;
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
             
             document.getElementById('hours').textContent = hours;
             document.getElementById('minutes').textContent = minutes;
             document.getElementById('seconds').textContent = seconds;
             
-            // Date
             const options = { weekday: 'long', month: 'long', day: 'numeric' };
             document.getElementById('date').textContent = now.toLocaleDateString('en-US', options);
-            
-            // Greeting
-            const hour = now.getHours();
-            let greeting = '';
-            if (hour < 12) greeting = 'Good Morning';
-            else if (hour < 17) greeting = 'Good Afternoon';
-            else greeting = 'Good Evening';
-            document.getElementById('greeting').textContent = greeting;
         }
         
-        updateClock();
-        setInterval(updateClock, 1000);
+        function formatNum(n) {
+            if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
+            if (n >= 1000) return (n/1000).toFixed(1) + 'k';
+            return n;
+        }
+        
+        function updateStats() {
+            fetch('/stats')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.cpu_temp_f) document.getElementById('cpu-temp').textContent = data.cpu_temp_f;
+                    if (data.mem_percent) document.getElementById('mem').textContent = data.mem_percent;
+                    if (data.uptime) document.getElementById('uptime').textContent = data.uptime;
+                    if (data.blocked_total !== null) {
+                        document.getElementById('blocked').textContent = formatNum(data.blocked_total);
+                    }
+                    if (data.weather_f && data.weather_desc) {
+                        document.getElementById('weather').textContent = data.weather_f + '° ' + data.weather_desc;
+                    }
+                    if (data.sunrise) document.getElementById('sunrise').textContent = data.sunrise;
+                    if (data.sunset) document.getElementById('sunset').textContent = data.sunset;
+                })
+                .catch(e => console.log('Stats error:', e));
+        }
+        
+        updateTime();
+        updateStats();
+        setInterval(updateTime, 1000);
+        setInterval(updateStats, 60000);
     </script>
 </body>
 </html>

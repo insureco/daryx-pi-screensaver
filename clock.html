@@ -42,18 +42,6 @@
             opacity: 0.7;
             margin-top: 0.5em;
         }
-        .stats {
-            display: flex;
-            gap: 3vw;
-            margin-top: 4vh;
-            font-size: 2.8vw;
-            opacity: 0.6;
-        }
-        .stat {
-            display: flex;
-            align-items: center;
-            gap: 0.4em;
-        }
         .weather-row {
             display: flex;
             gap: 3vw;
@@ -64,6 +52,24 @@
         .sun {
             opacity: 0.5;
             font-size: 2.5vw;
+        }
+        .sunset-countdown {
+            margin-top: 2vh;
+            font-size: 2.2vw;
+            opacity: 0.5;
+            text-align: center;
+        }
+        .stats {
+            display: flex;
+            gap: 3vw;
+            margin-top: 2vh;
+            font-size: 2.8vw;
+            opacity: 0.6;
+        }
+        .stat {
+            display: flex;
+            align-items: center;
+            gap: 0.4em;
         }
     </style>
 </head>
@@ -78,6 +84,7 @@
             <span class="sun">🌅 <span id="sunrise">--</span></span>
             <span class="sun">🌇 <span id="sunset">--</span></span>
         </div>
+        <div class="sunset-countdown" id="sunset-countdown"></div>
         <div class="stats">
             <span class="stat">🌡️ <span id="cpu-temp">--</span>°</span>
             <span class="stat">🛡️ <span id="blocked">--</span></span>
@@ -86,6 +93,8 @@
         </div>
     </div>
     <script>
+        let sunsetTime = null;
+        
         function updateTime() {
             const now = new Date();
             let hours = now.getHours();
@@ -99,6 +108,45 @@
             
             const options = { weekday: 'long', month: 'long', day: 'numeric' };
             document.getElementById('date').textContent = now.toLocaleDateString('en-US', options);
+            
+            updateSunsetCountdown();
+        }
+        
+        function updateSunsetCountdown() {
+            if (!sunsetTime) return;
+            const now = new Date();
+            const diff = sunsetTime - now;
+            const el = document.getElementById('sunset-countdown');
+            
+            if (diff <= 0) {
+                el.textContent = '🌙 sun has set';
+                return;
+            }
+            
+            const hours = Math.floor(diff / 3600000);
+            const mins = Math.floor((diff % 3600000) / 60000);
+            
+            if (hours > 0) {
+                el.textContent = `☀️ ${hours}h ${mins}m until sunset`;
+            } else {
+                el.textContent = `☀️ ${mins}m until sunset`;
+            }
+        }
+        
+        function parseSunsetTime(timeStr) {
+            // Parse "5:18PM" format
+            const match = timeStr.match(/(\d+):(\d+)(AM|PM)/i);
+            if (!match) return null;
+            
+            let hours = parseInt(match[1]);
+            const mins = parseInt(match[2]);
+            const ampm = match[3].toUpperCase();
+            
+            if (ampm === 'PM' && hours !== 12) hours += 12;
+            if (ampm === 'AM' && hours === 12) hours = 0;
+            
+            const now = new Date();
+            return new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, mins, 0);
         }
         
         function formatNum(n) {
@@ -121,7 +169,11 @@
                         document.getElementById('weather').textContent = data.weather_f + '° ' + data.weather_desc;
                     }
                     if (data.sunrise) document.getElementById('sunrise').textContent = data.sunrise;
-                    if (data.sunset) document.getElementById('sunset').textContent = data.sunset;
+                    if (data.sunset) {
+                        document.getElementById('sunset').textContent = data.sunset;
+                        sunsetTime = parseSunsetTime(data.sunset);
+                        updateSunsetCountdown();
+                    }
                 })
                 .catch(e => console.log('Stats error:', e));
         }

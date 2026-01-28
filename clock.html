@@ -75,14 +75,14 @@
         <div class="date" id="date">Loading...</div>
         <div class="weather-row">
             <span id="weather">--</span>
-            <span class="sun">☀↑ <span id="sunrise">--</span></span>
-            <span class="sun">☀↓ <span id="sunset">--</span></span>
+            <span class="sun">🌅 <span id="sunrise">--</span></span>
+            <span class="sun">🌇 <span id="sunset">--</span></span>
         </div>
         <div class="stats">
-            <span class="stat"><span class="stat-icon">🌡</span> <span id="cpu-temp">--</span>°</span>
-            <span class="stat"><span class="stat-icon">🛡</span> <span id="blocked">--</span></span>
-            <span class="stat"><span class="stat-icon">💾</span> <span id="mem">--</span>%</span>
-            <span class="stat"><span class="stat-icon">⏱</span> <span id="uptime">--</span></span>
+            <span class="stat">🌡️ <span id="cpu-temp">--</span>°</span>
+            <span class="stat">🛡️ <span id="blocked">--</span></span>
+            <span class="stat">💾 <span id="mem">--</span>%</span>
+            <span class="stat">⏱️ <span id="uptime">--</span></span>
         </div>
     </div>
     <script>
@@ -129,7 +129,7 @@
         updateTime();
         updateStats();
         setInterval(updateTime, 1000);
-        setInterval(updateStats, 60000);
+        setInterval(updateStats, 10000);
     </script>
 </body>
 </html>

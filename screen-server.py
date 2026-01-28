@@ -30,7 +30,14 @@ chromium_proc = None
 # Cache weather data (refresh every 10 min)
 weather_cache = {"data": None, "time": 0}
 
-signal.signal(signal.SIGCHLD, lambda s, f: os.waitpid(-1, os.WNOHANG))
+def reap_children(sig, frame):
+    try:
+        while True:
+            os.waitpid(-1, os.WNOHANG)
+    except ChildProcessError:
+        pass
+
+signal.signal(signal.SIGCHLD, reap_children)
 
 def set_brightness(val):
     try:

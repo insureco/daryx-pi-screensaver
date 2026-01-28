@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clock</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@200;300;400&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #000;
+            color: #fff;
+            font-family: 'Exo 2', sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+        .time {
+            font-size: 20vw;
+            font-weight: 200;
+            letter-spacing: -0.02em;
+            line-height: 1;
+        }
+        .seconds {
+            font-size: 8vw;
+            opacity: 0.4;
+            vertical-align: super;
+        }
+        .date {
+            font-size: 4vw;
+            font-weight: 300;
+            opacity: 0.6;
+            margin-top: 2vh;
+        }
+        .greeting {
+            font-size: 3vw;
+            font-weight: 300;
+            opacity: 0.4;
+            margin-top: 4vh;
+        }
+    </style>
+</head>
+<body>
+    <div class="time">
+        <span id="hours">00</span>:<span id="minutes">00</span><span class="seconds" id="seconds">00</span>
+    </div>
+    <div class="date" id="date">Loading...</div>
+    <div class="greeting" id="greeting"></div>
+
+    <script>
+        function updateClock() {
+            const now = new Date();
+            
+            let hours = now.getHours();
+            const minutes = now.getMinutes().toString().padStart(2, '0');
+            const seconds = now.getSeconds().toString().padStart(2, '0');
+            
+            // 12-hour format
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            hours = hours % 12 || 12;
+            
+            document.getElementById('hours').textContent = hours;
+            document.getElementById('minutes').textContent = minutes;
+            document.getElementById('seconds').textContent = seconds;
+            
+            // Date
+            const options = { weekday: 'long', month: 'long', day: 'numeric' };
+            document.getElementById('date').textContent = now.toLocaleDateString('en-US', options);
+            
+            // Greeting
+            const hour = now.getHours();
+            let greeting = '';
+            if (hour < 12) greeting = 'Good Morning';
+            else if (hour < 17) greeting = 'Good Afternoon';
+            else greeting = 'Good Evening';
+            document.getElementById('greeting').textContent = greeting;
+        }
+        
+        updateClock();
+        setInterval(updateClock, 1000);
+    </script>
+</body>
+</html>

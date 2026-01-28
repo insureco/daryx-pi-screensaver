@@ -1,0 +1,2 @@
+# Allow non-root users to control backlight brightness
+SUBSYSTEM=="backlight", ACTION=="add", RUN+="/bin/chmod 666 /sys/class/backlight/%k/brightness"

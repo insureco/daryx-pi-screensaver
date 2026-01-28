@@ -1,0 +1,2 @@
+# Screen manager with clock dashboard (runs as user)
+python3 ~/screen-server.py > /tmp/screen.log 2>&1 &

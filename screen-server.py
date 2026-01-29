@@ -15,6 +15,13 @@ import json
 import urllib.request
 import re
 
+# Calendar integration (optional - gracefully degrades if deps missing)
+try:
+    from google_calendar import get_calendar_status
+    CALENDAR_AVAILABLE = True
+except ImportError:
+    CALENDAR_AVAILABLE = False
+
 BACKLIGHT = "/sys/class/backlight/10-0045/brightness"
 TOUCH_DEV = "/dev/input/event4"
 IDLE_TO_CLOCK = 300
@@ -38,7 +45,8 @@ cached_stats = {
     "weather_f": None,
     "weather_desc": None,
     "sunrise": None,
-    "sunset": None
+    "sunset": None,
+    "next_event": None
 }
 stats_lock = threading.Lock()
 
@@ -83,7 +91,8 @@ def launch_chromium(url):
         chromium_proc = subprocess.Popen([
             "chromium", "--kiosk", "--noerrdialogs", "--disable-infobars",
             "--no-first-run", "--ozone-platform=wayland",
-            "--enable-features=UseOzonePlatform", url
+            "--enable-features=UseOzonePlatform",
+            "--default-background-color=000000", url
         ], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception as e:
         print(f"Chromium launch error: {e}", flush=True)
@@ -175,23 +184,41 @@ def get_weather():
     except:
         return None
 
+def get_calendar_event():
+    """Get calendar status (optional feature)"""
+    global dismissed_meeting_time
+    if not CALENDAR_AVAILABLE:
+        return None
+    try:
+        result = get_calendar_status()
+        # Add dismissed flag if meeting was recently dismissed (within 15 min)
+        if result and dismissed_meeting_time:
+            if time.time() - dismissed_meeting_time < 900:  # 15 min
+                result["dismissed"] = True
+            else:
+                dismissed_meeting_time = None  # Clear old dismissal
+        return result
+    except Exception:
+        return None
+
 def background_stats_updater():
     """Background thread that updates all stats periodically"""
     global cached_stats
     weather_last_update = 0
-    
+    calendar_last_update = 0
+
     while True:
         try:
             new_stats = {}
-            
+
             # System stats (always update)
             new_stats.update(get_system_stats())
-            
+
             # Blocky stats (local, fast)
             total, blocked = get_blocky_stats()
             new_stats["queries_total"] = total
             new_stats["blocked_total"] = blocked
-            
+
             # Weather (external, update every 10 min)
             now = time.time()
             if now - weather_last_update > 600:
@@ -199,15 +226,24 @@ def background_stats_updater():
                 if weather:
                     new_stats.update(weather)
                     weather_last_update = now
-            
+
+            # Calendar (external, update every 60s)
+            if now - calendar_last_update > 60:
+                event = get_calendar_event()
+                new_stats["next_event"] = event
+                calendar_last_update = now
+
             # Update cache atomically
             with stats_lock:
                 for k, v in new_stats.items():
                     if v is not None:
                         cached_stats[k] = v
+                # Allow None for next_event (means no upcoming events)
+                if "next_event" in new_stats:
+                    cached_stats["next_event"] = new_stats["next_event"]
         except Exception as e:
             print(f"Stats updater error: {e}", flush=True)
-        
+
         time.sleep(10)
 
 def chromium_watchdog():
@@ -244,30 +280,77 @@ BLACK_HTML = b'''<!DOCTYPE html><html><head>
 <a href="/wake" style="display:block;width:100vw;height:100vh;position:fixed;top:0;left:0"></a>
 </body></html>'''
 
+dismissed_meeting_time = None  # Track dismissed meeting start time
+
 class Handler(BaseHTTPRequestHandler):
     timeout = 5  # Socket timeout
-    
+
     def log_message(self, *args): pass
-    
+
     def safe_write(self, data):
         try:
             self.wfile.write(data)
         except:
             pass
-    
+
+    def stream_events(self):
+        """Stream stats updates via Server-Sent Events"""
+        try:
+            last_data = None
+            while True:
+                with stats_lock:
+                    stats_copy = dict(cached_stats)
+                data_json = json.dumps(stats_copy)
+                # Only send if data changed or every 5 seconds as heartbeat
+                if data_json != last_data:
+                    self.wfile.write(f"data: {data_json}\n\n".encode())
+                    self.wfile.flush()
+                    last_data = data_json
+                else:
+                    # Send heartbeat comment to keep connection alive
+                    self.wfile.write(b": heartbeat\n\n")
+                    self.wfile.flush()
+                time.sleep(1)  # Check every second
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # Client disconnected, exit gracefully
+        except Exception as e:
+            print(f"Stream error: {e}", flush=True)
+
+    def do_POST(self):
+        global dismissed_meeting_time
+        try:
+            if self.path == "/dismiss":
+                # Mark current meeting as dismissed - skip to next
+                with stats_lock:
+                    event = cached_stats.get("next_event")
+                    if event:
+                        dismissed_meeting_time = time.time()
+                        print(f"Meeting dismissed: {event.get('next_title')}", flush=True)
+                self.send_response(200)
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.safe_write(b"ok")
+            elif self.path == "/snooze":
+                print("Meeting snoozed for 1 minute", flush=True)
+                self.send_response(200)
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.safe_write(b"ok")
+            else:
+                self.send_response(404)
+                self.end_headers()
+        except Exception as e:
+            print(f"POST Handler error: {e}", flush=True)
+
     def do_GET(self):
         global last_activity
         try:
             if self.path == "/clock":
                 clock_html = load_clock_html()
-                clock_with_touch = clock_html.replace(
-                    b'</body>',
-                    b'<a href="/to-desktop" style="display:block;width:100vw;height:100vh;position:fixed;top:0;left:0;z-index:9999"></a></body>'
-                )
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html")
                 self.end_headers()
-                self.safe_write(clock_with_touch)
+                self.safe_write(clock_html)
             elif self.path == "/black":
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html")
@@ -299,11 +382,26 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.safe_write(json.dumps(stats_copy).encode())
+            elif self.path == "/stream":
+                # Server-Sent Events endpoint
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Connection", "keep-alive")
+                self.end_headers()
+                self.stream_events()
             else:
                 self.send_response(404)
                 self.end_headers()
         except Exception as e:
             print(f"Handler error: {e}", flush=True)
+
+def is_night_hours():
+    """Return True if current time is between 10pm and 6am (dim hours)"""
+    from datetime import datetime
+    hour = datetime.now().hour
+    return hour >= 22 or hour < 6
 
 def idle_monitor():
     global state, last_activity
@@ -315,7 +413,8 @@ def idle_monitor():
                 if state == "desktop" and idle_time > IDLE_TO_CLOCK:
                     show_clock()
                     last_activity = time.time()
-                elif state == "clock" and idle_time > IDLE_TO_DIM:
+                elif state == "clock" and idle_time > IDLE_TO_DIM and is_night_hours():
+                    # Only dim at night (10pm-6am)
                     show_dimmed()
         except Exception as e:
             print(f"Idle monitor error: {e}", flush=True)
@@ -337,7 +436,7 @@ if __name__ == "__main__":
     kill_chromium()
     set_brightness(BRIGHT_LEVEL)
     print(f"Screen manager on port {PORT} (bulletproof)", flush=True)
-    print(f"Desktop -> {IDLE_TO_CLOCK}s -> Clock -> {IDLE_TO_DIM}s -> Dimmed", flush=True)
+    print(f"Desktop -> {IDLE_TO_CLOCK}s -> Clock (dims only 10pm-6am)", flush=True)
     
     # Start all background threads
     threading.Thread(target=idle_monitor, daemon=True).start()

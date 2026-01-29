@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Clock</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body {
@@ -19,169 +19,519 @@
         .container {
             display: flex;
             flex-direction: column;
-            justify-content: center;
-            align-items: center;
             height: 100vh;
-            padding: 20px;
+            padding: 2vh 3vw;
+        }
+
+        /* Top section - two columns */
+        .top-section {
+            display: flex;
+            align-items: center;
+            gap: 3vw;
+            padding-top: 2vh;
         }
         .time {
-            font-size: 18vw;
+            font-size: 9vw;
             font-weight: 300;
             letter-spacing: -0.02em;
             line-height: 1;
+            min-width: 30vw;
         }
         .time .seconds {
-            font-size: 6vw;
+            font-size: 3vw;
             opacity: 0.5;
             vertical-align: super;
             margin-left: 0.1em;
+            display: inline-block;
+            min-width: 4vw;
+        }
+        .top-info {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5vh;
         }
         .date {
-            font-size: 4vw;
+            font-size: 3vw;
             font-weight: 400;
             opacity: 0.7;
-            margin-top: 0.5em;
         }
-        .weather-row {
+        .weather-sun {
             display: flex;
-            gap: 3vw;
-            margin-top: 2vh;
-            font-size: 3vw;
-            opacity: 0.7;
-        }
-        .sun {
-            opacity: 0.5;
-            font-size: 2.5vw;
-        }
-        .sunset-countdown {
-            margin-top: 2vh;
+            gap: 2vw;
+            align-items: baseline;
             font-size: 2.2vw;
+            opacity: 0.6;
+        }
+        .weather-sun .sun {
+            font-size: 1.8vw;
+        }
+
+        /* Middle section - meetings (hero area) */
+        .middle-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .event-row {
+            text-align: center;
+            width: 100%;
+        }
+        .event-title {
+            font-size: 8vw;
+            font-weight: 400;
+            margin-bottom: 1vh;
+        }
+        .event-countdown {
+            font-size: 9vw;
+            font-weight: 700;
+            opacity: 1;
+        }
+        .in-meeting {
+            color: #4CAF50;
+        }
+        .event-soon {
+            color: #FFC107;
+        }
+        .event-urgent {
+            color: #ff4444;
+        }
+        .no-events {
+            font-size: 4vw;
+            opacity: 0.3;
+        }
+
+        /* Alert buttons */
+        .alert-buttons {
+            display: flex;
+            gap: 4vw;
+            margin-top: 4vh;
+            justify-content: center;
+        }
+        .alert-btn {
+            padding: 2vh 4vw;
+            font-size: 3.5vw;
+            font-family: 'Exo 2', sans-serif;
+            font-weight: 600;
+            border: none;
+            border-radius: 1vw;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn-confirm {
+            background: #4CAF50;
+            color: #fff;
+        }
+        .btn-snooze {
+            background: #666;
+            color: #fff;
+        }
+        .alert-btn:active {
+            transform: scale(0.95);
+        }
+
+        /* Flashing animation */
+        @keyframes flash-urgent {
+            0%, 50% { background: #000; }
+            25%, 75% { background: #330000; }
+        }
+        @keyframes pulse-text {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .flashing {
+            animation: flash-urgent 1s infinite;
+        }
+        .pulse {
+            animation: pulse-text 0.5s infinite;
+        }
+
+        /* Bottom section */
+        .bottom-section {
+            display: flex;
+            flex-direction: column;
+            gap: 1vh;
+        }
+        .close-btn {
+            position: fixed;
+            top: 2vh;
+            right: 3vw;
+            font-size: 4vw;
+            opacity: 0.3;
+            text-decoration: none;
+            color: #fff;
+            padding: 1vw 2vw;
+            z-index: 100;
+        }
+        .close-btn:hover, .close-btn:active {
+            opacity: 0.8;
+        }
+
+        .sunset-countdown {
+            font-size: 2vw;
             opacity: 0.5;
             text-align: center;
         }
         .stats {
             display: flex;
+            justify-content: center;
             gap: 3vw;
-            margin-top: 2vh;
-            font-size: 2.8vw;
-            opacity: 0.6;
+            font-size: 2vw;
+            opacity: 0.5;
         }
         .stat {
             display: flex;
             align-items: center;
-            gap: 0.4em;
+            gap: 0.3em;
         }
     </style>
 </head>
 <body>
+    <a href="/to-desktop" class="close-btn">✕</a>
     <div class="container">
-        <div class="time">
-            <span id="hours">--</span>:<span id="minutes">--</span><span class="seconds" id="seconds">--</span>
+        <!-- Top: Clock | Date + Weather/Sun -->
+        <div class="top-section">
+            <div class="time">
+                <span id="hours">--</span>:<span id="minutes">--</span><span class="seconds" id="seconds">--</span>
+            </div>
+            <div class="top-info">
+                <div class="date" id="date">Loading...</div>
+                <div class="weather-sun">
+                    <span id="weather">--</span>
+                    <span class="sun">🌅 <span id="sunrise">--</span></span>
+                    <span class="sun">🌇 <span id="sunset">--</span></span>
+                </div>
+            </div>
         </div>
-        <div class="date" id="date">Loading...</div>
-        <div class="weather-row">
-            <span id="weather">--</span>
-            <span class="sun">🌅 <span id="sunrise">--</span></span>
-            <span class="sun">🌇 <span id="sunset">--</span></span>
+
+        <!-- Middle: Next Meeting (hero) -->
+        <div class="middle-section">
+            <div class="event-row" id="event-row">
+                <div class="no-events">No upcoming meetings</div>
+            </div>
         </div>
-        <div class="sunset-countdown" id="sunset-countdown"></div>
-        <div class="stats">
-            <span class="stat">🌡️ <span id="cpu-temp">--</span>°</span>
-            <span class="stat">🛡️ <span id="blocked">--</span></span>
-            <span class="stat">💾 <span id="mem">--</span>%</span>
-            <span class="stat">⏱️ <span id="uptime">--</span></span>
+
+        <!-- Bottom: Sunset countdown and Stats -->
+        <div class="bottom-section">
+            <div class="sunset-countdown" id="sunset-countdown"></div>
+            <div class="stats">
+                <span class="stat">🌡️ <span id="cpu-temp">--</span>°</span>
+                <span class="stat">🛡️ <span id="blocked">--</span></span>
+                <span class="stat">💾 <span id="mem">--</span>%</span>
+                <span class="stat">⏱️ <span id="uptime">--</span></span>
+            </div>
         </div>
     </div>
     <script>
         let sunsetTime = null;
-        
+        let snoozedUntil = null;
+        let lastEventId = null;
+
         function updateTime() {
             const now = new Date();
             let hours = now.getHours();
             hours = hours % 12 || 12;
             const minutes = String(now.getMinutes()).padStart(2, '0');
             const seconds = String(now.getSeconds()).padStart(2, '0');
-            
+
             document.getElementById('hours').textContent = hours;
             document.getElementById('minutes').textContent = minutes;
             document.getElementById('seconds').textContent = seconds;
-            
+
             const options = { weekday: 'long', month: 'long', day: 'numeric' };
             document.getElementById('date').textContent = now.toLocaleDateString('en-US', options);
-            
+
             updateSunsetCountdown();
         }
-        
+
         function updateSunsetCountdown() {
             if (!sunsetTime) return;
             const now = new Date();
             const diff = sunsetTime - now;
             const el = document.getElementById('sunset-countdown');
-            
+
             if (diff <= 0) {
                 el.textContent = '🌙 sun has set';
                 return;
             }
-            
+
             const hours = Math.floor(diff / 3600000);
             const mins = Math.floor((diff % 3600000) / 60000);
-            
+
             if (hours > 0) {
                 el.textContent = `☀️ ${hours}h ${mins}m until sunset`;
             } else {
                 el.textContent = `☀️ ${mins}m until sunset`;
             }
         }
-        
+
         function parseSunsetTime(timeStr) {
-            // Parse "5:18PM" format
             const match = timeStr.match(/(\d+):(\d+)(AM|PM)/i);
             if (!match) return null;
-            
+
             let hours = parseInt(match[1]);
             const mins = parseInt(match[2]);
             const ampm = match[3].toUpperCase();
-            
+
             if (ampm === 'PM' && hours !== 12) hours += 12;
             if (ampm === 'AM' && hours === 12) hours = 0;
-            
+
             const now = new Date();
             return new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, mins, 0);
         }
-        
+
         function formatNum(n) {
             if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
             if (n >= 1000) return (n/1000).toFixed(1) + 'k';
             return n;
         }
-        
-        function updateStats() {
-            fetch('/stats')
-                .then(r => r.json())
-                .then(data => {
-                    if (data.cpu_temp_f) document.getElementById('cpu-temp').textContent = data.cpu_temp_f;
-                    if (data.mem_percent) document.getElementById('mem').textContent = data.mem_percent;
-                    if (data.uptime) document.getElementById('uptime').textContent = data.uptime;
-                    if (data.blocked_total !== null) {
-                        document.getElementById('blocked').textContent = formatNum(data.blocked_total);
-                    }
-                    if (data.weather_f && data.weather_desc) {
-                        document.getElementById('weather').textContent = data.weather_f + '° ' + data.weather_desc;
-                    }
-                    if (data.sunrise) document.getElementById('sunrise').textContent = data.sunrise;
-                    if (data.sunset) {
-                        document.getElementById('sunset').textContent = data.sunset;
-                        sunsetTime = parseSunsetTime(data.sunset);
-                        updateSunsetCountdown();
-                    }
-                })
-                .catch(e => console.log('Stats error:', e));
+
+        function dismissMeeting() {
+            fetch('/dismiss', { method: 'POST' })
+                .then(() => updateStats())
+                .catch(e => console.log('Dismiss error:', e));
+            document.body.classList.remove('flashing');
         }
-        
+
+        function snoozeMeeting() {
+            snoozedUntil = Date.now() + 60000; // 1 minute
+            document.body.classList.remove('flashing');
+            fetch('/snooze', { method: 'POST' })
+                .catch(e => console.log('Snooze error:', e));
+        }
+
+        function updateEventDisplay(event) {
+            const row = document.getElementById('event-row');
+            const now = Date.now();
+
+            // Check if snoozed
+            const isSnoozed = snoozedUntil && now < snoozedUntil;
+
+            // Check if dismissed (server tells us)
+            const isDismissed = event && event.dismissed;
+
+            if (!event || !event.next_title) {
+                row.innerHTML = '<div class="no-events">No upcoming meetings</div>';
+                document.body.classList.remove('flashing');
+                return;
+            }
+
+            // Parse minutes from countdown
+            let mins = 999;
+            const countdown = event.next_countdown || '';
+
+            if (countdown === 'now' || countdown.includes('now')) {
+                mins = 0;
+            } else if (countdown.includes('m') && !countdown.includes('h') && !countdown.includes('d')) {
+                mins = parseInt(countdown.match(/\d+/)?.[0] || '999');
+            } else if (countdown.includes('h')) {
+                const hourMatch = countdown.match(/(\d+)h/);
+                const minMatch = countdown.match(/(\d+)m/);
+                mins = (parseInt(hourMatch?.[1] || '0') * 60) + parseInt(minMatch?.[1] || '0');
+            }
+
+            // Determine alert level for NEXT meeting
+            const isUrgent = mins <= 3;
+            const isSoon = mins <= 15 && mins > 3;
+            const isStarting = mins === 0;
+
+            // Check if current meeting needs alert (started < 15 mins ago, not dismissed)
+            const currentMeetingNeedsAlert = event.in_meeting &&
+                !isDismissed &&
+                event.current_started_mins_ago !== null &&
+                event.current_started_mins_ago < 15;
+
+            let html = '';
+
+            // PRIORITY 1: Alert for current meeting that started (not yet acknowledged)
+            if (currentMeetingNeedsAlert) {
+                if (!isSnoozed) {
+                    document.body.classList.add('flashing');
+                } else {
+                    document.body.classList.remove('flashing');
+                }
+
+                const minsLate = event.current_started_mins_ago || 0;
+                if (minsLate === 0) {
+                    html += '<div class="event-urgent pulse" style="font-size: 5vw; margin-bottom: 2vh;">🔴 STARTING NOW 🔴</div>';
+                } else {
+                    html += '<div class="event-urgent pulse" style="font-size: 5vw; margin-bottom: 2vh;">🔴 STARTED ' + minsLate + ' MIN AGO 🔴</div>';
+                }
+                html += '<div class="event-title event-urgent">' + event.current_title + '</div>';
+
+                if (!isSnoozed) {
+                    html += '<div class="alert-buttons">';
+                    html += '<button class="alert-btn btn-confirm" onclick="dismissMeeting()">I\'m In</button>';
+                    html += '<button class="alert-btn btn-snooze" onclick="snoozeMeeting()">Snooze 1m</button>';
+                    html += '</div>';
+                } else {
+                    const secsLeft = Math.ceil((snoozedUntil - now) / 1000);
+                    html += '<div class="event-countdown" style="opacity: 0.5;">Snoozed... ' + secsLeft + 's</div>';
+                }
+
+            // PRIORITY 2: Dismissed or in meeting > 15 mins - show calm state
+            } else if (isDismissed || (event.in_meeting && event.current_started_mins_ago >= 15)) {
+                document.body.classList.remove('flashing');
+                const currentName = event.current_title || 'meeting';
+                html += '<div class="in-meeting" style="font-size: 4vw; margin-bottom: 1vh;">🟢 In: ' + currentName + '</div>';
+                if (event.next_title) {
+                    html += '<div style="font-size: 3.5vw; opacity: 0.5; margin-top: 3vh;">Next: ' + event.next_title + '</div>';
+                    html += '<div style="font-size: 3vw; opacity: 0.4;">' + event.next_countdown + '</div>';
+                }
+
+            // PRIORITY 3: Upcoming meeting is urgent (< 3 mins)
+            } else if (isUrgent || isStarting) {
+                if (!isSnoozed) {
+                    document.body.classList.add('flashing');
+                } else {
+                    document.body.classList.remove('flashing');
+                }
+
+                if (isStarting) {
+                    html += '<div class="event-urgent pulse" style="font-size: 5vw; margin-bottom: 2vh;">🔴 STARTING NOW 🔴</div>';
+                } else {
+                    html += '<div class="event-urgent pulse" style="font-size: 5vw; margin-bottom: 2vh;">⚠️ ' + mins + ' MIN ⚠️</div>';
+                }
+                html += '<div class="event-title event-urgent">' + event.next_title + '</div>';
+
+                if (!isSnoozed) {
+                    html += '<div class="alert-buttons">';
+                    html += '<button class="alert-btn btn-confirm" onclick="dismissMeeting()">I\'m In</button>';
+                    html += '<button class="alert-btn btn-snooze" onclick="snoozeMeeting()">Snooze 1m</button>';
+                    html += '</div>';
+                } else {
+                    const secsLeft = Math.ceil((snoozedUntil - now) / 1000);
+                    html += '<div class="event-countdown" style="opacity: 0.5;">Snoozed... ' + secsLeft + 's</div>';
+                }
+
+            // PRIORITY 4: In meeting calmly (shouldn't hit this now, but fallback)
+            } else if (event.in_meeting) {
+                document.body.classList.remove('flashing');
+                const currentName = event.current_title || 'meeting';
+                html += '<div class="in-meeting" style="font-size: 4vw; margin-bottom: 1vh;">🟢 In: ' + currentName + '</div>';
+                if (event.next_title) {
+                    html += '<div style="font-size: 3.5vw; opacity: 0.5; margin-top: 3vh;">Next: ' + event.next_title + '</div>';
+                    html += '<div style="font-size: 3vw; opacity: 0.4;">' + event.next_countdown + '</div>';
+                }
+
+            // PRIORITY 5: Upcoming meeting is soon (3-15 mins)
+            } else if (isSoon) {
+                document.body.classList.remove('flashing');
+                html += '<div class="event-soon">';
+                html += '<div class="event-title">🟡 ' + event.next_title + '</div>';
+                html += '<div class="event-countdown">' + event.next_countdown + '</div>';
+                html += '</div>';
+
+            } else {
+                document.body.classList.remove('flashing');
+                html += '<div class="event-title">' + event.next_title + '</div>';
+                html += '<div class="event-countdown">' + event.next_countdown + '</div>';
+            }
+
+            row.innerHTML = html;
+        }
+
+        function handleStatsData(data) {
+            if (data.cpu_temp_f) document.getElementById('cpu-temp').textContent = data.cpu_temp_f;
+            if (data.mem_percent) document.getElementById('mem').textContent = data.mem_percent;
+            if (data.uptime) document.getElementById('uptime').textContent = data.uptime;
+            if (data.blocked_total !== null) {
+                document.getElementById('blocked').textContent = formatNum(data.blocked_total);
+            }
+            if (data.weather_f && data.weather_desc) {
+                document.getElementById('weather').textContent = data.weather_f + '° ' + data.weather_desc;
+            }
+            if (data.sunrise) document.getElementById('sunrise').textContent = data.sunrise;
+            if (data.sunset) {
+                document.getElementById('sunset').textContent = data.sunset;
+                sunsetTime = parseSunsetTime(data.sunset);
+                updateSunsetCountdown();
+            }
+            updateEventDisplay(data.next_event);
+        }
+
+        // SSE with reconnection handling
+        let eventSource = null;
+        let reconnectAttempts = 0;
+        let lastDataTime = Date.now();
+        const MAX_RECONNECT_ATTEMPTS = 10;
+
+        function connectSSE() {
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            console.log('Connecting to SSE stream...');
+            eventSource = new EventSource('/stream');
+
+            eventSource.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleStatsData(data);
+                    lastDataTime = Date.now();
+                    reconnectAttempts = 0; // Reset on success
+                } catch (e) {
+                    console.log('Parse error:', e);
+                }
+            };
+
+            eventSource.onerror = function(e) {
+                console.log('SSE error, reconnecting...');
+                eventSource.close();
+                reconnectAttempts++;
+
+                if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                    // Exponential backoff: 1s, 2s, 4s, 8s... max 30s
+                    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 30000);
+                    setTimeout(connectSSE, delay);
+                } else {
+                    console.log('Max reconnect attempts, falling back to polling');
+                    startPollingFallback();
+                }
+            };
+
+            eventSource.onopen = function() {
+                console.log('SSE connected');
+                reconnectAttempts = 0;
+            };
+        }
+
+        // Fallback polling if SSE fails completely
+        let pollingInterval = null;
+        function startPollingFallback() {
+            if (pollingInterval) return;
+            console.log('Starting polling fallback');
+            pollingInterval = setInterval(function() {
+                fetch('/stats')
+                    .then(r => r.json())
+                    .then(handleStatsData)
+                    .catch(e => console.log('Poll error:', e));
+            }, 5000);
+        }
+
+        // Watchdog: if no data for 30s, try to reconnect
+        setInterval(function() {
+            if (Date.now() - lastDataTime > 30000) {
+                console.log('Watchdog: no data for 30s, reconnecting...');
+                lastDataTime = Date.now(); // Prevent rapid retries
+                reconnectAttempts = 0;
+                connectSSE();
+            }
+        }, 10000);
+
+        // Page visibility: reconnect when page becomes visible
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden && Date.now() - lastDataTime > 10000) {
+                console.log('Page visible, reconnecting SSE...');
+                connectSSE();
+            }
+        });
+
         updateTime();
-        updateStats();
+        connectSSE();
         setInterval(updateTime, 1000);
-        setInterval(updateStats, 10000);
     </script>
 </body>
 </html>

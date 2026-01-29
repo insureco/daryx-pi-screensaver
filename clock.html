@@ -186,10 +186,133 @@
             align-items: center;
             gap: 0.3em;
         }
+
+        /* Tomorrow button */
+        .tomorrow-btn {
+            padding: 1.5vh 3vw;
+            font-size: 2.5vw;
+            font-family: 'Exo 2', sans-serif;
+            font-weight: 600;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 1vw;
+            background: transparent;
+            color: #fff;
+            cursor: pointer;
+            margin-top: 2vh;
+        }
+        .tomorrow-btn:active {
+            background: rgba(255,255,255,0.1);
+        }
+
+        /* Agenda overlay */
+        .agenda-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+            z-index: 200;
+            display: none;
+            flex-direction: column;
+            padding: 3vh 4vw;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .agenda-overlay.visible {
+            display: flex;
+        }
+        .agenda-header {
+            display: flex;
+            align-items: center;
+            gap: 3vw;
+            margin-bottom: 4vh;
+        }
+        .back-btn {
+            font-size: 5vw;
+            color: #fff;
+            text-decoration: none;
+            opacity: 0.7;
+            cursor: pointer;
+            padding: 1vw;
+        }
+        .back-btn:active {
+            opacity: 1;
+        }
+        .agenda-title {
+            font-size: 4vw;
+            font-weight: 400;
+        }
+        .agenda-list {
+            flex: 1;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: pan-y;
+        }
+        .agenda-list::-webkit-scrollbar {
+            width: 8px;
+        }
+        .agenda-list::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.3);
+            border-radius: 4px;
+        }
+        .scroll-btns {
+            display: flex;
+            gap: 2vw;
+            margin-left: auto;
+        }
+        .scroll-btn {
+            padding: 1vh 3vw;
+            font-size: 4vw;
+            background: rgba(255,255,255,0.15);
+            border: none;
+            border-radius: 1vw;
+            color: #fff;
+            cursor: pointer;
+        }
+        .scroll-btn:active {
+            background: rgba(255,255,255,0.3);
+        }
+        .scroll-btn:disabled {
+            opacity: 0.2;
+        }
+        .agenda-item {
+            display: flex;
+            align-items: baseline;
+            padding: 2vh 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .agenda-time {
+            font-size: 3vw;
+            opacity: 0.6;
+            min-width: 18vw;
+            text-align: right;
+            padding-right: 3vw;
+        }
+        .agenda-event-title {
+            font-size: 3.5vw;
+            flex: 1;
+        }
     </style>
 </head>
 <body>
     <a href="/to-desktop" class="close-btn">✕</a>
+
+    <!-- Tomorrow's Agenda Overlay -->
+    <div class="agenda-overlay" id="agenda-overlay">
+        <div class="agenda-header">
+            <span class="back-btn" onclick="hideAgenda()">←</span>
+            <span class="agenda-title" id="agenda-title">Tomorrow</span>
+            <div class="scroll-btns">
+                <button type="button" class="scroll-btn" id="scroll-up-btn">▲</button>
+                <button type="button" class="scroll-btn" id="scroll-down-btn">▼</button>
+            </div>
+        </div>
+        <div class="agenda-list" id="agenda-list"></div>
+    </div>
+
     <div class="container">
         <!-- Top: Clock | Date + Weather/Sun -->
         <div class="top-section">
@@ -229,6 +352,102 @@
         let sunriseTime = null;
         let snoozedUntil = null;
         let lastEventId = null;
+        let tomorrowSummary = null;
+        let tomorrowEvents = [];
+
+        let agendaScrollIndex = 0;
+        const ITEMS_PER_PAGE = 5;
+
+        let touchStartY = 0;
+
+        function setupTouchScrolling() {
+            const overlay = document.getElementById('agenda-overlay');
+
+            overlay.ontouchstart = function(e) {
+                touchStartY = e.touches[0].clientY;
+            };
+
+            overlay.ontouchend = function(e) {
+                const touchEndY = e.changedTouches[0].clientY;
+                const diff = touchStartY - touchEndY;
+
+                // Swipe threshold of 50px
+                if (diff > 50) {
+                    // Swiped up - scroll down
+                    scrollAgenda(1);
+                } else if (diff < -50) {
+                    // Swiped down - scroll up
+                    scrollAgenda(-1);
+                }
+            };
+        }
+
+        function showAgenda() {
+            const overlay = document.getElementById('agenda-overlay');
+            const title = document.getElementById('agenda-title');
+            const list = document.getElementById('agenda-list');
+
+            // Set title to tomorrow's date
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const options = { weekday: 'long', month: 'long', day: 'numeric' };
+            title.textContent = tomorrow.toLocaleDateString('en-US', options);
+
+            // Attach click handlers to scroll buttons
+            document.getElementById('scroll-up-btn').onclick = function() { scrollAgenda(-1); };
+            document.getElementById('scroll-down-btn').onclick = function() { scrollAgenda(1); };
+
+            // Listen for native scroll to update buttons
+            list.onscroll = updateScrollButtons;
+
+            // Reset scroll position
+            list.scrollTop = 0;
+
+            renderAgendaItems();
+            overlay.classList.add('visible');
+        }
+
+        function renderAgendaItems() {
+            const list = document.getElementById('agenda-list');
+
+            if (tomorrowEvents.length === 0) {
+                list.innerHTML = '<div style="font-size: 3vw; opacity: 0.5; text-align: center; margin-top: 10vh;">No meetings scheduled</div>';
+                return;
+            }
+
+            let html = '';
+            // Render ALL items - let native touch scrolling handle it
+            for (const event of tomorrowEvents) {
+                html += '<div class="agenda-item">';
+                html += '<span class="agenda-time">' + event.start_time + '</span>';
+                html += '<span class="agenda-event-title">' + event.title + '</span>';
+                html += '</div>';
+            }
+
+            list.innerHTML = html;
+
+            // Update button states based on scroll position
+            updateScrollButtons();
+        }
+
+        function updateScrollButtons() {
+            const list = document.getElementById('agenda-list');
+            const canScrollUp = list.scrollTop > 0;
+            const canScrollDown = list.scrollTop < list.scrollHeight - list.clientHeight - 5;
+            document.getElementById('scroll-up-btn').disabled = !canScrollUp;
+            document.getElementById('scroll-down-btn').disabled = !canScrollDown;
+        }
+
+        function scrollAgenda(direction) {
+            const list = document.getElementById('agenda-list');
+            const scrollAmount = 80; // pixels per button press
+            list.scrollBy({ top: direction * scrollAmount, behavior: 'smooth' });
+            setTimeout(updateScrollButtons, 100);
+        }
+
+        function hideAgenda() {
+            document.getElementById('agenda-overlay').classList.remove('visible');
+        }
 
         function updateTime() {
             const now = new Date();
@@ -402,9 +621,12 @@
                 document.body.classList.remove('flashing');
                 const currentName = event.current_title || 'meeting';
                 html += '<div class="in-meeting" style="font-size: 4vw; margin-bottom: 1vh;">🟢 In: ' + currentName + '</div>';
-                if (event.next_title && event.next_is_tomorrow) {
-                    html += '<div style="font-size: 3vw; opacity: 0.4; margin-top: 3vh;">✓ Nothing left today</div>';
-                    html += '<div style="font-size: 3vw; opacity: 0.4;">Tomorrow: ' + event.next_title + '</div>';
+                if (event.next_is_tomorrow && event.tomorrow_summary) {
+                    html += '<div style="font-size: 3vw; opacity: 0.5; margin-top: 3vh;">✓ Nothing left today</div>';
+                    const ts = event.tomorrow_summary;
+                    html += '<div style="font-size: 3vw; opacity: 0.7; margin-top: 2vh;">Tomorrow: ' + ts.count + ' meeting' + (ts.count > 1 ? 's' : '') + '</div>';
+                    html += '<div style="font-size: 2.5vw; opacity: 0.5;">First: ' + ts.first_time + '  •  Last: ' + ts.last_time + '</div>';
+                    html += '<button class="tomorrow-btn" onclick="showAgenda()">View Tomorrow →</button>';
                 } else if (event.next_title) {
                     html += '<div style="font-size: 3.5vw; opacity: 0.5; margin-top: 3vh;">Next: ' + event.next_title + '</div>';
                     html += '<div style="font-size: 3vw; opacity: 0.4;">' + event.next_countdown + '</div>';
@@ -442,9 +664,12 @@
                 document.body.classList.remove('flashing');
                 const currentName = event.current_title || 'meeting';
                 html += '<div class="in-meeting" style="font-size: 4vw; margin-bottom: 1vh;">🟢 In: ' + currentName + '</div>';
-                if (event.next_title && event.next_is_tomorrow) {
-                    html += '<div style="font-size: 3vw; opacity: 0.4; margin-top: 3vh;">✓ Nothing left today</div>';
-                    html += '<div style="font-size: 3vw; opacity: 0.4;">Tomorrow: ' + event.next_title + '</div>';
+                if (event.next_is_tomorrow && event.tomorrow_summary) {
+                    html += '<div style="font-size: 3vw; opacity: 0.5; margin-top: 3vh;">✓ Nothing left today</div>';
+                    const ts = event.tomorrow_summary;
+                    html += '<div style="font-size: 3vw; opacity: 0.7; margin-top: 2vh;">Tomorrow: ' + ts.count + ' meeting' + (ts.count > 1 ? 's' : '') + '</div>';
+                    html += '<div style="font-size: 2.5vw; opacity: 0.5;">First: ' + ts.first_time + '  •  Last: ' + ts.last_time + '</div>';
+                    html += '<button class="tomorrow-btn" onclick="showAgenda()">View Tomorrow →</button>';
                 } else if (event.next_title) {
                     html += '<div style="font-size: 3.5vw; opacity: 0.5; margin-top: 3vh;">Next: ' + event.next_title + '</div>';
                     html += '<div style="font-size: 3vw; opacity: 0.4;">' + event.next_countdown + '</div>';
@@ -461,10 +686,17 @@
                 html += '</div>';
 
             } else if (event.next_is_tomorrow) {
-                // Next meeting is tomorrow
+                // Next meeting is tomorrow - show summary
                 document.body.classList.remove('flashing');
-                html += '<div style="font-size: 4vw; opacity: 0.5; margin-bottom: 2vh;">✓ Nothing left today</div>';
-                html += '<div class="event-title" style="opacity: 0.7;">Tomorrow: ' + event.next_title + '</div>';
+                html += '<div style="font-size: 5vw; opacity: 0.6; margin-bottom: 3vh;">✓ Nothing left today</div>';
+                if (event.tomorrow_summary) {
+                    const ts = event.tomorrow_summary;
+                    html += '<div style="font-size: 4vw; opacity: 0.8;">Tomorrow: ' + ts.count + ' meeting' + (ts.count > 1 ? 's' : '') + '</div>';
+                    html += '<div style="font-size: 3vw; opacity: 0.5; margin-top: 1vh;">First: ' + ts.first_time + '  •  Last: ' + ts.last_time + '</div>';
+                    html += '<button class="tomorrow-btn" onclick="showAgenda()">View Tomorrow →</button>';
+                } else {
+                    html += '<div class="event-title" style="opacity: 0.7;">Tomorrow: ' + event.next_title + '</div>';
+                }
 
             } else {
                 document.body.classList.remove('flashing');
@@ -494,6 +726,13 @@
                 sunsetTime = parseSunTime(data.sunset);
             }
             updateSunsetCountdown();
+
+            // Store tomorrow's data for agenda view
+            if (data.next_event) {
+                tomorrowSummary = data.next_event.tomorrow_summary || null;
+                tomorrowEvents = data.next_event.tomorrow_events || [];
+            }
+
             updateEventDisplay(data.next_event);
         }
 
@@ -576,6 +815,7 @@
 
         updateTime();
         connectSSE();
+        setupTouchScrolling();
         setInterval(updateTime, 1000);
     </script>
 </body>

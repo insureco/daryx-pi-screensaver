@@ -132,15 +132,16 @@ def get_next_event(credentials=None, token_path="~/token.json"):
 
 def get_calendar_status(credentials=None, token_path="~/token.json"):
     """
-    Get current meeting status and next upcoming event.
+    Get current meeting status, next upcoming event, and tomorrow's summary.
 
     Returns:
-        dict with {in_meeting, next_title, next_countdown} or None
+        dict with {in_meeting, next_title, next_countdown, tomorrow_summary, tomorrow_events} or None
     """
     if not _check_imports():
         return None
 
     from googleapiclient.discovery import build
+    from datetime import timedelta
 
     if credentials is None:
         credentials = load_credentials(token_path)
@@ -154,12 +155,20 @@ def get_calendar_status(credentials=None, token_path="~/token.json"):
         now_dt = datetime.now(timezone.utc)
         now = now_dt.isoformat()
 
+        # Get end of tomorrow to fetch all relevant events
+        local_now = now_dt.astimezone()
+        tomorrow = (local_now + timedelta(days=1)).date()
+        end_of_tomorrow = datetime(
+            tomorrow.year, tomorrow.month, tomorrow.day, 23, 59, 59
+        ).astimezone().isoformat()
+
         events_result = (
             service.events()
             .list(
                 calendarId="primary",
                 timeMin=now,
-                maxResults=5,
+                timeMax=end_of_tomorrow,
+                maxResults=50,
                 singleEvents=True,
                 orderBy="startTime",
             )
@@ -216,6 +225,32 @@ def get_calendar_status(credentials=None, token_path="~/token.json"):
             # Get next timed event
             next_event = timed_events[0] if timed_events else None
 
+        # Get tomorrow's events for summary and agenda
+        today = local_now.date()
+        tomorrow_events = []
+        for e in timed_events:
+            if e["start_dt"]:
+                event_date = e["start_dt"].astimezone().date()
+                if event_date == tomorrow:
+                    local_start = e["start_dt"].astimezone()
+                    local_end = e["end_dt"].astimezone() if e["end_dt"] else None
+                    tomorrow_events.append({
+                        "title": e["title"],
+                        "start_time": _format_time_display(local_start),
+                        "end_time": _format_time_display(local_end) if local_end else None,
+                    })
+
+        # Build tomorrow summary
+        tomorrow_summary = None
+        if tomorrow_events:
+            first_event = tomorrow_events[0]
+            last_event = tomorrow_events[-1]
+            tomorrow_summary = {
+                "count": len(tomorrow_events),
+                "first_time": first_event["start_time"],
+                "last_time": last_event["start_time"],
+            }
+
         if not next_event:
             return {
                 "in_meeting": in_meeting,
@@ -223,6 +258,8 @@ def get_calendar_status(credentials=None, token_path="~/token.json"):
                 "current_started_mins_ago": current_started_mins_ago,
                 "next_title": None,
                 "next_countdown": None,
+                "tomorrow_summary": tomorrow_summary,
+                "tomorrow_events": tomorrow_events,
             }
 
         title = next_event["title"]
@@ -233,7 +270,6 @@ def get_calendar_status(credentials=None, token_path="~/token.json"):
         next_is_tomorrow = False
         if next_event["start_dt"]:
             next_date = next_event["start_dt"].astimezone().date()
-            today = now_dt.astimezone().date()
             next_is_tomorrow = next_date > today
 
         return {
@@ -243,10 +279,22 @@ def get_calendar_status(credentials=None, token_path="~/token.json"):
             "next_title": title,
             "next_countdown": countdown,
             "next_is_tomorrow": next_is_tomorrow,
+            "tomorrow_summary": tomorrow_summary,
+            "tomorrow_events": tomorrow_events,
         }
 
     except Exception:
         return None
+
+
+def _format_time_display(dt):
+    """Format datetime to display time like '9:00 AM'."""
+    if not dt:
+        return None
+    hour = dt.hour % 12 or 12
+    minute = dt.strftime("%M")
+    ampm = "AM" if dt.hour < 12 else "PM"
+    return f"{hour}:{minute} {ampm}"
 
 
 def _format_countdown(start_dt, now_dt):

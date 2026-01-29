@@ -229,12 +229,20 @@ def get_calendar_status(credentials=None, token_path="~/token.json"):
 
         countdown = _format_countdown(next_event["start_dt"], now_dt)
 
+        # Check if next meeting is today or tomorrow
+        next_is_tomorrow = False
+        if next_event["start_dt"]:
+            next_date = next_event["start_dt"].astimezone().date()
+            today = now_dt.astimezone().date()
+            next_is_tomorrow = next_date > today
+
         return {
             "in_meeting": in_meeting,
             "current_title": current_title,
             "current_started_mins_ago": current_started_mins_ago,
             "next_title": title,
             "next_countdown": countdown,
+            "next_is_tomorrow": next_is_tomorrow,
         }
 
     except Exception:

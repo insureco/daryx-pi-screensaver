@@ -226,6 +226,7 @@
     </div>
     <script>
         let sunsetTime = null;
+        let sunriseTime = null;
         let snoozedUntil = null;
         let lastEventId = null;
 
@@ -247,27 +248,47 @@
         }
 
         function updateSunsetCountdown() {
-            if (!sunsetTime) return;
-            const now = new Date();
-            const diff = sunsetTime - now;
             const el = document.getElementById('sunset-countdown');
+            const now = new Date();
 
-            if (diff <= 0) {
-                el.textContent = '🌙 sun has set';
-                return;
+            if (sunsetTime) {
+                const diff = sunsetTime - now;
+
+                if (diff > 0) {
+                    // Before sunset - show time until sunset
+                    const hours = Math.floor(diff / 3600000);
+                    const mins = Math.floor((diff % 3600000) / 60000);
+                    if (hours > 0) {
+                        el.textContent = `☀️ ${hours}h ${mins}m until sunset`;
+                    } else {
+                        el.textContent = `☀️ ${mins}m until sunset`;
+                    }
+                    return;
+                }
             }
 
-            const hours = Math.floor(diff / 3600000);
-            const mins = Math.floor((diff % 3600000) / 60000);
+            // After sunset - show time until sunrise
+            if (sunriseTime) {
+                // Sunrise is tomorrow
+                let nextSunrise = new Date(sunriseTime);
+                if (nextSunrise <= now) {
+                    nextSunrise.setDate(nextSunrise.getDate() + 1);
+                }
+                const diff = nextSunrise - now;
+                const hours = Math.floor(diff / 3600000);
+                const mins = Math.floor((diff % 3600000) / 60000);
 
-            if (hours > 0) {
-                el.textContent = `☀️ ${hours}h ${mins}m until sunset`;
+                if (hours > 0) {
+                    el.textContent = `🌙 sun has set, returns in ${hours}h ${mins}m`;
+                } else {
+                    el.textContent = `🌙 sun has set, returns in ${mins}m`;
+                }
             } else {
-                el.textContent = `☀️ ${mins}m until sunset`;
+                el.textContent = '🌙 sun has set';
             }
         }
 
-        function parseSunsetTime(timeStr) {
+        function parseSunTime(timeStr) {
             const match = timeStr.match(/(\d+):(\d+)(AM|PM)/i);
             if (!match) return null;
 
@@ -381,9 +402,14 @@
                 document.body.classList.remove('flashing');
                 const currentName = event.current_title || 'meeting';
                 html += '<div class="in-meeting" style="font-size: 4vw; margin-bottom: 1vh;">🟢 In: ' + currentName + '</div>';
-                if (event.next_title) {
+                if (event.next_title && event.next_is_tomorrow) {
+                    html += '<div style="font-size: 3vw; opacity: 0.4; margin-top: 3vh;">✓ Nothing left today</div>';
+                    html += '<div style="font-size: 3vw; opacity: 0.4;">Tomorrow: ' + event.next_title + '</div>';
+                } else if (event.next_title) {
                     html += '<div style="font-size: 3.5vw; opacity: 0.5; margin-top: 3vh;">Next: ' + event.next_title + '</div>';
                     html += '<div style="font-size: 3vw; opacity: 0.4;">' + event.next_countdown + '</div>';
+                } else {
+                    html += '<div style="font-size: 3vw; opacity: 0.4; margin-top: 3vh;">✓ Nothing left today</div>';
                 }
 
             // PRIORITY 3: Upcoming meeting is urgent (< 3 mins)
@@ -416,9 +442,14 @@
                 document.body.classList.remove('flashing');
                 const currentName = event.current_title || 'meeting';
                 html += '<div class="in-meeting" style="font-size: 4vw; margin-bottom: 1vh;">🟢 In: ' + currentName + '</div>';
-                if (event.next_title) {
+                if (event.next_title && event.next_is_tomorrow) {
+                    html += '<div style="font-size: 3vw; opacity: 0.4; margin-top: 3vh;">✓ Nothing left today</div>';
+                    html += '<div style="font-size: 3vw; opacity: 0.4;">Tomorrow: ' + event.next_title + '</div>';
+                } else if (event.next_title) {
                     html += '<div style="font-size: 3.5vw; opacity: 0.5; margin-top: 3vh;">Next: ' + event.next_title + '</div>';
                     html += '<div style="font-size: 3vw; opacity: 0.4;">' + event.next_countdown + '</div>';
+                } else {
+                    html += '<div style="font-size: 3vw; opacity: 0.4; margin-top: 3vh;">✓ Nothing left today</div>';
                 }
 
             // PRIORITY 5: Upcoming meeting is soon (3-15 mins)
@@ -428,6 +459,12 @@
                 html += '<div class="event-title">🟡 ' + event.next_title + '</div>';
                 html += '<div class="event-countdown">' + event.next_countdown + '</div>';
                 html += '</div>';
+
+            } else if (event.next_is_tomorrow) {
+                // Next meeting is tomorrow
+                document.body.classList.remove('flashing');
+                html += '<div style="font-size: 4vw; opacity: 0.5; margin-bottom: 2vh;">✓ Nothing left today</div>';
+                html += '<div class="event-title" style="opacity: 0.7;">Tomorrow: ' + event.next_title + '</div>';
 
             } else {
                 document.body.classList.remove('flashing');
@@ -448,12 +485,15 @@
             if (data.weather_f && data.weather_desc) {
                 document.getElementById('weather').textContent = data.weather_f + '° ' + data.weather_desc;
             }
-            if (data.sunrise) document.getElementById('sunrise').textContent = data.sunrise;
+            if (data.sunrise) {
+                document.getElementById('sunrise').textContent = data.sunrise;
+                sunriseTime = parseSunTime(data.sunrise);
+            }
             if (data.sunset) {
                 document.getElementById('sunset').textContent = data.sunset;
-                sunsetTime = parseSunsetTime(data.sunset);
-                updateSunsetCountdown();
+                sunsetTime = parseSunTime(data.sunset);
             }
+            updateSunsetCountdown();
             updateEventDisplay(data.next_event);
         }
 

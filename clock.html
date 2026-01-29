@@ -290,7 +290,12 @@
 
         function dismissMeeting() {
             fetch('/dismiss', { method: 'POST' })
-                .then(() => updateStats())
+                .then(() => {
+                    // Force immediate refresh
+                    return fetch('/stats');
+                })
+                .then(r => r.json())
+                .then(data => handleStatsData(data))
                 .catch(e => console.log('Dismiss error:', e));
             document.body.classList.remove('flashing');
         }

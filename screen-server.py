@@ -169,7 +169,7 @@ def get_weather():
     """Get weather (external API, can be slow)"""
     try:
         req = urllib.request.Request(
-            "https://wttr.in/San+Diego?format=j1",
+            "https://wttr.in/La+Mesa+CA+91941?format=j1",
             headers={"User-Agent": "curl/7.68.0"}
         )
         resp = urllib.request.urlopen(req, timeout=10)

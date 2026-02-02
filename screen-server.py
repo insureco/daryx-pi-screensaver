@@ -165,24 +165,56 @@ def get_blocky_stats():
     except:
         return None, None
 
-def get_weather():
-    """Get weather (external API, can be slow)"""
+WMO_WEATHER_CODES = {
+    0: "Clear", 1: "Mostly Clear", 2: "Partly Cloudy", 3: "Overcast",
+    45: "Foggy", 48: "Icy Fog",
+    51: "Light Drizzle", 53: "Drizzle", 55: "Heavy Drizzle",
+    61: "Light Rain", 63: "Rain", 65: "Heavy Rain",
+    71: "Light Snow", 73: "Snow", 75: "Heavy Snow",
+    80: "Light Showers", 81: "Showers", 82: "Heavy Showers",
+    95: "Thunderstorm", 96: "Hail Thunderstorm", 99: "Heavy Hail Thunderstorm",
+}
+
+def _format_sun_time(iso_str):
+    """Format ISO sunrise/sunset to display like '6:42AM'."""
+    from datetime import datetime
     try:
-        req = urllib.request.Request(
-            "https://wttr.in/La+Mesa+CA+91941?format=j1",
-            headers={"User-Agent": "curl/7.68.0"}
+        dt = datetime.fromisoformat(iso_str)
+        hour = dt.hour % 12 or 12
+        minute = dt.strftime("%M")
+        ampm = "AM" if dt.hour < 12 else "PM"
+        return f"{hour}:{minute}{ampm}"
+    except Exception:
+        return None
+
+def get_weather():
+    """Get weather from Open-Meteo (free, no API key, accurate grid data)."""
+    try:
+        url = (
+            "https://api.open-meteo.com/v1/forecast?"
+            "latitude=32.7678&longitude=-117.0231"
+            "&current=temperature_2m,weather_code"
+            "&daily=sunrise,sunset"
+            "&temperature_unit=fahrenheit"
+            "&timezone=America/Los_Angeles"
+            "&forecast_days=1"
         )
-        resp = urllib.request.urlopen(req, timeout=10)
+        resp = urllib.request.urlopen(url, timeout=10)
         data = json.load(resp)
-        current = data["current_condition"][0]
-        astro = data["weather"][0]["astronomy"][0]
-        return {
-            "weather_f": current["temp_F"],
-            "weather_desc": current["weatherDesc"][0]["value"],
-            "sunrise": astro["sunrise"].lstrip("0").replace(" ", ""),
-            "sunset": astro["sunset"].lstrip("0").replace(" ", "")
-        }
-    except:
+        current = data["current"]
+        daily = data["daily"]
+        temp_f = round(current["temperature_2m"])
+        code = current.get("weather_code", 0)
+        desc = WMO_WEATHER_CODES.get(code, f"Code {code}")
+        sunrise = _format_sun_time(daily["sunrise"][0]) if daily.get("sunrise") else None
+        sunset = _format_sun_time(daily["sunset"][0]) if daily.get("sunset") else None
+        result = {"weather_f": str(temp_f), "weather_desc": desc}
+        if sunrise:
+            result["sunrise"] = sunrise
+        if sunset:
+            result["sunset"] = sunset
+        return result
+    except Exception:
         return None
 
 def get_calendar_event():

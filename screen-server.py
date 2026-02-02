@@ -4,7 +4,7 @@ Screen manager with clock dashboard - runs as user
 States: desktop -> clock -> dimmed
 BULLETPROOF VERSION - never blocks, auto-recovers
 """
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import subprocess
 import threading
 import time
@@ -57,7 +57,8 @@ def reap_children(sig, frame):
     except:
         pass
 
-signal.signal(signal.SIGCHLD, reap_children)
+# Note: SIGCHLD handler disabled - conflicts with ThreadingHTTPServer
+# signal.signal(signal.SIGCHLD, reap_children)
 
 def set_brightness(val):
     try:
@@ -186,17 +187,16 @@ def get_weather():
 
 def get_calendar_event():
     """Get calendar status (optional feature)"""
-    global dismissed_meeting_time
+    global acknowledged_meetings
     if not CALENDAR_AVAILABLE:
         return None
     try:
         result = get_calendar_status()
-        # Add dismissed flag if meeting was recently dismissed (within 15 min)
-        if result and dismissed_meeting_time:
-            if time.time() - dismissed_meeting_time < 900:  # 15 min
-                result["dismissed"] = True
-            else:
-                dismissed_meeting_time = None  # Clear old dismissal
+        if result:
+            # Clean up old acknowledgments (> 24h) and inject active ones
+            now = time.time()
+            acknowledged_meetings = {k: v for k, v in acknowledged_meetings.items() if now - v < 86400}
+            result["acknowledged_meetings"] = list(acknowledged_meetings.keys())
         return result
     except Exception:
         return None
@@ -227,8 +227,8 @@ def background_stats_updater():
                     new_stats.update(weather)
                     weather_last_update = now
 
-            # Calendar (external, update every 60s)
-            if now - calendar_last_update > 60:
+            # Calendar (external, update every 60s) - skip if test override active
+            if now - calendar_last_update > 60 and test_meeting_override is None:
                 event = get_calendar_event()
                 new_stats["next_event"] = event
                 calendar_last_update = now
@@ -280,10 +280,76 @@ BLACK_HTML = b'''<!DOCTYPE html><html><head>
 <a href="/wake" style="display:block;width:100vw;height:100vh;position:fixed;top:0;left:0"></a>
 </body></html>'''
 
-dismissed_meeting_time = None  # Track dismissed meeting start time
+acknowledged_meetings = {}  # {meeting_start_iso: ack_timestamp}
+test_meeting_override = None  # When set, overrides next_event in cached_stats
+
+def build_test_scenario(scenario):
+    """Build fake next_event data for testing meeting alert UI."""
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    scenarios = {
+        "upcoming": {
+            "in_meeting": False,
+            "current_title": None,
+            "current_start_iso": None,
+            "current_started_mins_ago": None,
+            "next_title": "Test Meeting",
+            "next_countdown": "in 10m",
+            "next_start_iso": (now + timedelta(minutes=10)).isoformat(),
+            "next_is_tomorrow": False,
+            "acknowledged_meetings": list(acknowledged_meetings.keys()),
+        },
+        "urgent": {
+            "in_meeting": False,
+            "current_title": None,
+            "current_start_iso": None,
+            "current_started_mins_ago": None,
+            "next_title": "Test Meeting",
+            "next_countdown": "in 2m",
+            "next_start_iso": (now + timedelta(minutes=2)).isoformat(),
+            "next_is_tomorrow": False,
+            "acknowledged_meetings": list(acknowledged_meetings.keys()),
+        },
+        "starting": {
+            "in_meeting": True,
+            "current_title": "Test Meeting",
+            "current_start_iso": now.isoformat(),
+            "current_started_mins_ago": 0,
+            "next_title": None,
+            "next_countdown": None,
+            "next_start_iso": None,
+            "next_is_tomorrow": False,
+            "acknowledged_meetings": list(acknowledged_meetings.keys()),
+        },
+        "started-5": {
+            "in_meeting": True,
+            "current_title": "Test Meeting",
+            "current_start_iso": (now - timedelta(minutes=5)).isoformat(),
+            "current_started_mins_ago": 5,
+            "next_title": "Next Test Meeting",
+            "next_countdown": "in 25m",
+            "next_start_iso": (now + timedelta(minutes=25)).isoformat(),
+            "next_is_tomorrow": False,
+            "acknowledged_meetings": list(acknowledged_meetings.keys()),
+        },
+        "back-to-back": {
+            "in_meeting": True,
+            "current_title": "Meeting A",
+            "current_start_iso": (now - timedelta(minutes=20)).isoformat(),
+            "current_started_mins_ago": 20,
+            "next_title": "Meeting B",
+            "next_countdown": "in 2m",
+            "next_start_iso": (now + timedelta(minutes=2)).isoformat(),
+            "next_is_tomorrow": False,
+            "acknowledged_meetings": list(acknowledged_meetings.keys()),
+        },
+    }
+    return scenarios.get(scenario)
+
 
 class Handler(BaseHTTPRequestHandler):
-    timeout = 5  # Socket timeout
+    timeout = 5
+    protocol_version = "HTTP/1.0"  # Disable keep-alive (one request per connection)
 
     def log_message(self, *args): pass
 
@@ -293,6 +359,15 @@ class Handler(BaseHTTPRequestHandler):
         except:
             pass
 
+    def inject_ack_list(self, stats):
+        """Inject current acknowledged_meetings into next_event if present."""
+        if stats.get("next_event") and isinstance(stats["next_event"], dict):
+            stats["next_event"] = {
+                **stats["next_event"],
+                "acknowledged_meetings": list(acknowledged_meetings.keys()),
+            }
+        return stats
+
     def stream_events(self):
         """Stream stats updates via Server-Sent Events"""
         try:
@@ -300,32 +375,36 @@ class Handler(BaseHTTPRequestHandler):
             while True:
                 with stats_lock:
                     stats_copy = dict(cached_stats)
+                stats_copy = self.inject_ack_list(stats_copy)
                 data_json = json.dumps(stats_copy)
-                # Only send if data changed or every 5 seconds as heartbeat
                 if data_json != last_data:
                     self.wfile.write(f"data: {data_json}\n\n".encode())
                     self.wfile.flush()
                     last_data = data_json
                 else:
-                    # Send heartbeat comment to keep connection alive
                     self.wfile.write(b": heartbeat\n\n")
                     self.wfile.flush()
-                time.sleep(1)  # Check every second
-        except (BrokenPipeError, ConnectionResetError):
-            pass  # Client disconnected, exit gracefully
+                time.sleep(1)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
         except Exception as e:
             print(f"Stream error: {e}", flush=True)
 
     def do_POST(self):
-        global dismissed_meeting_time
+        global acknowledged_meetings
         try:
             if self.path == "/dismiss":
-                # Mark current meeting as dismissed - skip to next
-                with stats_lock:
-                    event = cached_stats.get("next_event")
-                    if event:
-                        dismissed_meeting_time = time.time()
-                        print(f"Meeting dismissed: {event.get('next_title')}", flush=True)
+                # Acknowledge a specific meeting by its start ISO
+                content_len = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(content_len) if content_len > 0 else b'{}'
+                try:
+                    payload = json.loads(body)
+                except Exception:
+                    payload = {}
+                meeting_id = payload.get("meeting_id")
+                if meeting_id:
+                    acknowledged_meetings[meeting_id] = time.time()
+                    print(f"Meeting acknowledged: {meeting_id}", flush=True)
                 self.send_response(200)
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
@@ -343,7 +422,7 @@ class Handler(BaseHTTPRequestHandler):
             print(f"POST Handler error: {e}", flush=True)
 
     def do_GET(self):
-        global last_activity
+        global last_activity, test_meeting_override
         try:
             if self.path == "/clock":
                 clock_html = load_clock_html()
@@ -377,13 +456,37 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/stats":
                 with stats_lock:
                     stats_copy = dict(cached_stats)
+                stats_copy = self.inject_ack_list(stats_copy)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.safe_write(json.dumps(stats_copy).encode())
+            elif self.path.startswith("/test-meeting"):
+                from urllib.parse import urlparse, parse_qs
+                params = parse_qs(urlparse(self.path).query)
+                scenario = params.get("scenario", [None])[0]
+                if scenario == "clear":
+                    test_meeting_override = None
+                    msg = "Test override cleared"
+                elif scenario:
+                    data = build_test_scenario(scenario)
+                    if data:
+                        test_meeting_override = data
+                        with stats_lock:
+                            cached_stats["next_event"] = data
+                        msg = f"Scenario '{scenario}' active"
+                    else:
+                        msg = f"Unknown scenario: {scenario}"
+                else:
+                    available = "upcoming, urgent, starting, started-5, back-to-back, clear"
+                    msg = f"Usage: /test-meeting?scenario=X where X is: {available}"
+                print(f"TEST: {msg}", flush=True)
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.safe_write(msg.encode())
             elif self.path == "/stream":
-                # Server-Sent Events endpoint
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 self.send_header("Cache-Control", "no-cache")
@@ -444,5 +547,7 @@ if __name__ == "__main__":
     threading.Thread(target=background_stats_updater, daemon=True).start()
     threading.Thread(target=chromium_watchdog, daemon=True).start()
     
-    # Run HTTP server (never blocks on stats now)
-    HTTPServer(("", PORT), Handler).serve_forever()
+    # Run threaded HTTP server (SSE streams don't block other requests)
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    server.daemon_threads = True
+    server.serve_forever()

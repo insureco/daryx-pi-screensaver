@@ -210,6 +210,7 @@ def get_calendar_status(credentials=None, token_path="~/token.json"):
         current_events = [e for e in timed_events if e["is_now"]]
         in_meeting = len(current_events) > 0
         current_title = current_events[0]["title"] if current_events else None
+        current_start_iso = current_events[0]["start_dt"].isoformat() if current_events and current_events[0]["start_dt"] else None
         # How many minutes ago did the current meeting start?
         current_started_mins_ago = None
         if current_events and current_events[0]["start_dt"]:
@@ -251,13 +252,17 @@ def get_calendar_status(credentials=None, token_path="~/token.json"):
                 "last_time": last_event["start_time"],
             }
 
+        next_start_iso = next_event["start_dt"].isoformat() if next_event and next_event["start_dt"] else None
+
         if not next_event:
             return {
                 "in_meeting": in_meeting,
                 "current_title": current_title,
+                "current_start_iso": current_start_iso,
                 "current_started_mins_ago": current_started_mins_ago,
                 "next_title": None,
                 "next_countdown": None,
+                "next_start_iso": None,
                 "tomorrow_summary": tomorrow_summary,
                 "tomorrow_events": tomorrow_events,
             }
@@ -275,9 +280,11 @@ def get_calendar_status(credentials=None, token_path="~/token.json"):
         return {
             "in_meeting": in_meeting,
             "current_title": current_title,
+            "current_start_iso": current_start_iso,
             "current_started_mins_ago": current_started_mins_ago,
             "next_title": title,
             "next_countdown": countdown,
+            "next_start_iso": next_start_iso,
             "next_is_tomorrow": next_is_tomorrow,
             "tomorrow_summary": tomorrow_summary,
             "tomorrow_events": tomorrow_events,

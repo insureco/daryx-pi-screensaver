@@ -354,6 +354,8 @@
         let lastEventId = null;
         let tomorrowSummary = null;
         let tomorrowEvents = [];
+        let lastEventData = null;
+        let snoozeTickInterval = null;
 
         let agendaScrollIndex = 0;
         const ITEMS_PER_PAGE = 5;
@@ -528,12 +530,13 @@
             return n;
         }
 
-        function dismissMeeting() {
-            fetch('/dismiss', { method: 'POST' })
-                .then(() => {
-                    // Force immediate refresh
-                    return fetch('/stats');
-                })
+        function dismissMeeting(meetingId) {
+            fetch('/dismiss', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ meeting_id: meetingId })
+            })
+                .then(() => fetch('/stats'))
                 .then(r => r.json())
                 .then(data => handleStatsData(data))
                 .catch(e => console.log('Dismiss error:', e));
@@ -544,20 +547,36 @@
             snoozedUntil = Date.now() + 60000; // 1 minute
             document.body.classList.remove('flashing');
             fetch('/snooze', { method: 'POST' })
-                .catch(e => console.log('Snooze error:', e));
+                .catch(function() {});
+            startSnoozeTick();
+        }
+
+        function startSnoozeTick() {
+            if (snoozeTickInterval) clearInterval(snoozeTickInterval);
+            snoozeTickInterval = setInterval(function() {
+                if (!snoozedUntil || Date.now() >= snoozedUntil) {
+                    clearInterval(snoozeTickInterval);
+                    snoozeTickInterval = null;
+                    snoozedUntil = null;
+                }
+                if (lastEventData) updateEventDisplay(lastEventData);
+            }, 1000);
         }
 
         function updateEventDisplay(event) {
+            lastEventData = event;
             const row = document.getElementById('event-row');
             const now = Date.now();
 
             // Check if snoozed
             const isSnoozed = snoozedUntil && now < snoozedUntil;
 
-            // Check if dismissed (server tells us)
-            const isDismissed = event && event.dismissed;
+            // Check per-meeting acknowledgment
+            const acked = (event && event.acknowledged_meetings) || [];
+            const currentAcked = event && event.current_start_iso && acked.includes(event.current_start_iso);
+            const nextAcked = event && event.next_start_iso && acked.includes(event.next_start_iso);
 
-            if (!event || !event.next_title) {
+            if (!event || (!event.next_title && !event.in_meeting)) {
                 row.innerHTML = '<div class="no-events">No upcoming meetings</div>';
                 document.body.classList.remove('flashing');
                 return;
@@ -582,15 +601,53 @@
             const isSoon = mins <= 15 && mins > 3;
             const isStarting = mins === 0;
 
-            // Check if current meeting needs alert (started < 15 mins ago, not dismissed)
+            // Check if current meeting needs alert (started < 15 mins ago, not acknowledged)
             const currentMeetingNeedsAlert = event.in_meeting &&
-                !isDismissed &&
+                !currentAcked &&
                 event.current_started_mins_ago !== null &&
                 event.current_started_mins_ago < 15;
 
+            // Check if next meeting needs urgent alert (< 3 min, not acknowledged)
+            const nextMeetingNeedsAlert = (isUrgent || isStarting) && !nextAcked;
+
             let html = '';
 
-            // PRIORITY 1: Alert for current meeting that started (not yet acknowledged)
+            // Helper to render alert buttons (used in flashing states)
+            function renderAlertButtons(meetingId) {
+                if (!isSnoozed) {
+                    return '<div class="alert-buttons">'
+                        + '<button class="alert-btn btn-confirm" onclick="dismissMeeting(\'' + meetingId + '\')">I\'m In</button>'
+                        + '<button class="alert-btn btn-snooze" onclick="snoozeMeeting()">Snooze 1m</button>'
+                        + '</div>';
+                }
+                const secsLeft = Math.ceil((snoozedUntil - now) / 1000);
+                return '<div class="alert-buttons">'
+                    + '<button class="alert-btn btn-confirm" onclick="dismissMeeting(\'' + meetingId + '\')">I\'m In</button>'
+                    + '<button class="alert-btn btn-snooze" disabled style="opacity:0.4">Snoozed ' + secsLeft + 's</button>'
+                    + '</div>';
+            }
+
+            // Helper to render calm "In: meeting" state with next meeting info
+            function renderCalmState() {
+                let h = '';
+                const currentName = event.current_title || 'meeting';
+                h += '<div class="in-meeting" style="font-size: 4vw; margin-bottom: 1vh;">🟢 In: ' + currentName + '</div>';
+                if (event.next_is_tomorrow && event.tomorrow_summary) {
+                    h += '<div style="font-size: 3vw; opacity: 0.5; margin-top: 3vh;">✓ Nothing left today</div>';
+                    const ts = event.tomorrow_summary;
+                    h += '<div style="font-size: 3vw; opacity: 0.7; margin-top: 2vh;">Tomorrow: ' + ts.count + ' meeting' + (ts.count > 1 ? 's' : '') + '</div>';
+                    h += '<div style="font-size: 2.5vw; opacity: 0.5;">First: ' + ts.first_time + '  •  Last: ' + ts.last_time + '</div>';
+                    h += '<button class="tomorrow-btn" onclick="showAgenda()">View Tomorrow →</button>';
+                } else if (event.next_title) {
+                    h += '<div style="font-size: 3.5vw; opacity: 0.5; margin-top: 3vh;">Next: ' + event.next_title + '</div>';
+                    h += '<div style="font-size: 3vw; opacity: 0.4;">' + event.next_countdown + '</div>';
+                } else {
+                    h += '<div style="font-size: 3vw; opacity: 0.4; margin-top: 3vh;">✓ Nothing left today</div>';
+                }
+                return h;
+            }
+
+            // PRIORITY 1: Current meeting started, not yet acknowledged (< 15 min)
             if (currentMeetingNeedsAlert) {
                 if (!isSnoozed) {
                     document.body.classList.add('flashing');
@@ -605,37 +662,10 @@
                     html += '<div class="event-urgent pulse" style="font-size: 5vw; margin-bottom: 2vh;">🔴 STARTED ' + minsLate + ' MIN AGO 🔴</div>';
                 }
                 html += '<div class="event-title event-urgent">' + event.current_title + '</div>';
+                html += renderAlertButtons(event.current_start_iso);
 
-                if (!isSnoozed) {
-                    html += '<div class="alert-buttons">';
-                    html += '<button class="alert-btn btn-confirm" onclick="dismissMeeting()">I\'m In</button>';
-                    html += '<button class="alert-btn btn-snooze" onclick="snoozeMeeting()">Snooze 1m</button>';
-                    html += '</div>';
-                } else {
-                    const secsLeft = Math.ceil((snoozedUntil - now) / 1000);
-                    html += '<div class="event-countdown" style="opacity: 0.5;">Snoozed... ' + secsLeft + 's</div>';
-                }
-
-            // PRIORITY 2: Dismissed or in meeting > 15 mins - show calm state
-            } else if (isDismissed || (event.in_meeting && event.current_started_mins_ago >= 15)) {
-                document.body.classList.remove('flashing');
-                const currentName = event.current_title || 'meeting';
-                html += '<div class="in-meeting" style="font-size: 4vw; margin-bottom: 1vh;">🟢 In: ' + currentName + '</div>';
-                if (event.next_is_tomorrow && event.tomorrow_summary) {
-                    html += '<div style="font-size: 3vw; opacity: 0.5; margin-top: 3vh;">✓ Nothing left today</div>';
-                    const ts = event.tomorrow_summary;
-                    html += '<div style="font-size: 3vw; opacity: 0.7; margin-top: 2vh;">Tomorrow: ' + ts.count + ' meeting' + (ts.count > 1 ? 's' : '') + '</div>';
-                    html += '<div style="font-size: 2.5vw; opacity: 0.5;">First: ' + ts.first_time + '  •  Last: ' + ts.last_time + '</div>';
-                    html += '<button class="tomorrow-btn" onclick="showAgenda()">View Tomorrow →</button>';
-                } else if (event.next_title) {
-                    html += '<div style="font-size: 3.5vw; opacity: 0.5; margin-top: 3vh;">Next: ' + event.next_title + '</div>';
-                    html += '<div style="font-size: 3vw; opacity: 0.4;">' + event.next_countdown + '</div>';
-                } else {
-                    html += '<div style="font-size: 3vw; opacity: 0.4; margin-top: 3vh;">✓ Nothing left today</div>';
-                }
-
-            // PRIORITY 3: Upcoming meeting is urgent (< 3 mins)
-            } else if (isUrgent || isStarting) {
+            // PRIORITY 2: Next meeting is urgent AND not acknowledged (even if in another meeting)
+            } else if (nextMeetingNeedsAlert) {
                 if (!isSnoozed) {
                     document.body.classList.add('flashing');
                 } else {
@@ -648,36 +678,14 @@
                     html += '<div class="event-urgent pulse" style="font-size: 5vw; margin-bottom: 2vh;">⚠️ ' + mins + ' MIN ⚠️</div>';
                 }
                 html += '<div class="event-title event-urgent">' + event.next_title + '</div>';
+                html += renderAlertButtons(event.next_start_iso);
 
-                if (!isSnoozed) {
-                    html += '<div class="alert-buttons">';
-                    html += '<button class="alert-btn btn-confirm" onclick="dismissMeeting()">I\'m In</button>';
-                    html += '<button class="alert-btn btn-snooze" onclick="snoozeMeeting()">Snooze 1m</button>';
-                    html += '</div>';
-                } else {
-                    const secsLeft = Math.ceil((snoozedUntil - now) / 1000);
-                    html += '<div class="event-countdown" style="opacity: 0.5;">Snoozed... ' + secsLeft + 's</div>';
-                }
-
-            // PRIORITY 4: In meeting calmly (shouldn't hit this now, but fallback)
+            // PRIORITY 3: In meeting (acknowledged or > 15 min) - calm state
             } else if (event.in_meeting) {
                 document.body.classList.remove('flashing');
-                const currentName = event.current_title || 'meeting';
-                html += '<div class="in-meeting" style="font-size: 4vw; margin-bottom: 1vh;">🟢 In: ' + currentName + '</div>';
-                if (event.next_is_tomorrow && event.tomorrow_summary) {
-                    html += '<div style="font-size: 3vw; opacity: 0.5; margin-top: 3vh;">✓ Nothing left today</div>';
-                    const ts = event.tomorrow_summary;
-                    html += '<div style="font-size: 3vw; opacity: 0.7; margin-top: 2vh;">Tomorrow: ' + ts.count + ' meeting' + (ts.count > 1 ? 's' : '') + '</div>';
-                    html += '<div style="font-size: 2.5vw; opacity: 0.5;">First: ' + ts.first_time + '  •  Last: ' + ts.last_time + '</div>';
-                    html += '<button class="tomorrow-btn" onclick="showAgenda()">View Tomorrow →</button>';
-                } else if (event.next_title) {
-                    html += '<div style="font-size: 3.5vw; opacity: 0.5; margin-top: 3vh;">Next: ' + event.next_title + '</div>';
-                    html += '<div style="font-size: 3vw; opacity: 0.4;">' + event.next_countdown + '</div>';
-                } else {
-                    html += '<div style="font-size: 3vw; opacity: 0.4; margin-top: 3vh;">✓ Nothing left today</div>';
-                }
+                html += renderCalmState();
 
-            // PRIORITY 5: Upcoming meeting is soon (3-15 mins)
+            // PRIORITY 4: Upcoming meeting is soon (3-15 mins)
             } else if (isSoon) {
                 document.body.classList.remove('flashing');
                 html += '<div class="event-soon">';
@@ -686,7 +694,6 @@
                 html += '</div>';
 
             } else if (event.next_is_tomorrow) {
-                // Next meeting is tomorrow - show summary
                 document.body.classList.remove('flashing');
                 html += '<div style="font-size: 5vw; opacity: 0.6; margin-bottom: 3vh;">✓ Nothing left today</div>';
                 if (event.tomorrow_summary) {
@@ -736,82 +743,59 @@
             updateEventDisplay(data.next_event);
         }
 
-        // SSE with reconnection handling
+        // SSE with reconnection and polling fallback
         let eventSource = null;
         let reconnectAttempts = 0;
         let lastDataTime = Date.now();
-        const MAX_RECONNECT_ATTEMPTS = 10;
 
         function connectSSE() {
             if (eventSource) {
                 eventSource.close();
             }
-
-            console.log('Connecting to SSE stream...');
             eventSource = new EventSource('/stream');
 
             eventSource.onmessage = function(event) {
                 try {
-                    const data = JSON.parse(event.data);
-                    handleStatsData(data);
+                    handleStatsData(JSON.parse(event.data));
                     lastDataTime = Date.now();
-                    reconnectAttempts = 0; // Reset on success
-                } catch (e) {
-                    console.log('Parse error:', e);
-                }
+                    reconnectAttempts = 0;
+                } catch (e) {}
             };
 
-            eventSource.onerror = function(e) {
-                console.log('SSE error, reconnecting...');
+            eventSource.onerror = function() {
                 eventSource.close();
                 reconnectAttempts++;
-
-                if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-                    // Exponential backoff: 1s, 2s, 4s, 8s... max 30s
-                    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 30000);
-                    setTimeout(connectSSE, delay);
+                if (reconnectAttempts < 10) {
+                    setTimeout(connectSSE, Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 30000));
                 } else {
-                    console.log('Max reconnect attempts, falling back to polling');
                     startPollingFallback();
                 }
             };
 
             eventSource.onopen = function() {
-                console.log('SSE connected');
                 reconnectAttempts = 0;
             };
         }
 
-        // Fallback polling if SSE fails completely
         let pollingInterval = null;
         function startPollingFallback() {
             if (pollingInterval) return;
-            console.log('Starting polling fallback');
             pollingInterval = setInterval(function() {
                 fetch('/stats')
                     .then(r => r.json())
                     .then(handleStatsData)
-                    .catch(e => console.log('Poll error:', e));
+                    .catch(function() {});
             }, 5000);
         }
 
-        // Watchdog: if no data for 30s, try to reconnect
+        // Watchdog: reconnect if no data for 30s
         setInterval(function() {
             if (Date.now() - lastDataTime > 30000) {
-                console.log('Watchdog: no data for 30s, reconnecting...');
-                lastDataTime = Date.now(); // Prevent rapid retries
+                lastDataTime = Date.now();
                 reconnectAttempts = 0;
                 connectSSE();
             }
         }, 10000);
-
-        // Page visibility: reconnect when page becomes visible
-        document.addEventListener('visibilitychange', function() {
-            if (!document.hidden && Date.now() - lastDataTime > 10000) {
-                console.log('Page visible, reconnecting SSE...');
-                connectSSE();
-            }
-        });
 
         updateTime();
         connectSSE();

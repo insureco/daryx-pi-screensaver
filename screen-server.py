@@ -262,7 +262,11 @@ def get_wellness():
     try:
         req = urllib.request.Request(
             WELLNESS_URL,
-            headers={"Authorization": f"Bearer {token}"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                # Cloudflare blocks the default Python-urllib UA as a bot
+                "User-Agent": "daryx-pi-screensaver/1.0",
+            },
         )
         resp = urllib.request.urlopen(req, timeout=10)
         data = json.load(resp)

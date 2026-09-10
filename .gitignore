@@ -6,3 +6,6 @@ __pycache__/
 # Google OAuth secrets
 credentials.json
 token.json
+
+# daryx-wellness API token
+wellness.json

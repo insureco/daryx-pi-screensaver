@@ -187,6 +187,20 @@
             gap: 0.3em;
         }
 
+        /* Wellness strip (daryx-wellness vitals) */
+        .wellness-strip {
+            display: flex;
+            justify-content: center;
+            gap: 2.5vw;
+            font-size: 2vw;
+            opacity: 0.5;
+        }
+        .wellness-strip .wstat {
+            display: flex;
+            align-items: center;
+            gap: 0.3em;
+        }
+
         /* Tomorrow button */
         .tomorrow-btn {
             padding: 1.5vh 3vw;
@@ -338,6 +352,12 @@
 
         <!-- Bottom: Sunset countdown and Stats -->
         <div class="bottom-section">
+            <div class="wellness-strip" id="wellness-strip" style="display:none">
+                <span class="wstat" id="wstat-sleep">😴 <span id="wl-sleep">--</span></span>
+                <span class="wstat" id="wstat-readiness">⚡ <span id="wl-readiness">--</span></span>
+                <span class="wstat" id="wstat-hrv">🫀 <span id="wl-hrv">--</span>ms</span>
+                <span class="wstat" id="wstat-fast">⏳ <span id="wl-fast">--</span></span>
+            </div>
             <div class="sunset-countdown" id="sunset-countdown"></div>
             <div class="stats">
                 <span class="stat">🌡️ <span id="cpu-temp">--</span>°</span>
@@ -714,6 +734,36 @@
             row.innerHTML = html;
         }
 
+        function updateWellness(w) {
+            const strip = document.getElementById('wellness-strip');
+            if (!w) {
+                strip.style.display = 'none';
+                return;
+            }
+            let any = false;
+            function setStat(id, valueId, value) {
+                const el = document.getElementById(id);
+                if (value === null || value === undefined) {
+                    el.style.display = 'none';
+                    return;
+                }
+                document.getElementById(valueId).textContent = value;
+                el.style.display = '';
+                any = true;
+            }
+            setStat('wstat-sleep', 'wl-sleep', w.sleep);
+            setStat('wstat-readiness', 'wl-readiness', w.readiness);
+            setStat('wstat-hrv', 'wl-hrv', w.hrv);
+            if (w.fast) {
+                const h = Math.floor(w.fast.elapsedHrs);
+                const m = Math.round((w.fast.elapsedHrs - h) * 60);
+                setStat('wstat-fast', 'wl-fast', h + ':' + String(m).padStart(2, '0') + ' / ' + w.fast.targetHrs + 'h');
+            } else {
+                document.getElementById('wstat-fast').style.display = 'none';
+            }
+            strip.style.display = any ? 'flex' : 'none';
+        }
+
         function handleStatsData(data) {
             if (data.cpu_temp_f) document.getElementById('cpu-temp').textContent = data.cpu_temp_f;
             if (data.mem_percent) document.getElementById('mem').textContent = data.mem_percent;
@@ -733,6 +783,7 @@
                 sunsetTime = parseSunTime(data.sunset);
             }
             updateSunsetCountdown();
+            updateWellness(data.wellness);
 
             // Store tomorrow's data for agenda view
             if (data.next_event) {

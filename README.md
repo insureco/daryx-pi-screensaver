@@ -71,6 +71,9 @@ sudo udevadm trigger
 cp screen-server.py ~/screen-server.py
 cp clock.html ~/clock.html
 chmod +x ~/screen-server.py
+
+# Optional: wellness vitals strip (Oura scores + active fast from daryx-wellness)
+cp wellness.json.example ~/wellness.json   # then edit in your PI_DISPLAY_TOKEN
 ```
 
 ### 4. Configure autostart
@@ -132,6 +135,7 @@ All network calls have timeouts. Stats are cached and served instantly.
 | Blocked | Blocky Prometheus `/metrics` | 10s |
 | Weather | wttr.in API | 10 min |
 | Sunrise/Sunset | wttr.in API | 10 min |
+| Wellness | daryx-wellness `/api/integrations/pi-display` (needs `~/wellness.json`) | 5 min |
 
 ## Testing
 

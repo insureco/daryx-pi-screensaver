@@ -30,6 +30,11 @@ DIM_LEVEL = 1
 BRIGHT_LEVEL = 255
 PORT = 8888
 
+# Wellness vitals from daryx-wellness (optional - needs ~/wellness.json {"token": ...})
+WELLNESS_URL = "https://daryx-wellness.tawa.pro/api/integrations/pi-display"
+WELLNESS_TOKEN_FILE = os.path.expanduser("~/wellness.json")
+WELLNESS_INTERVAL = 300  # 5 min
+
 state = "desktop"
 last_activity = time.time()
 state_lock = threading.Lock()
@@ -46,7 +51,8 @@ cached_stats = {
     "weather_desc": None,
     "sunrise": None,
     "sunset": None,
-    "next_event": None
+    "next_event": None,
+    "wellness": None
 }
 stats_lock = threading.Lock()
 
@@ -233,11 +239,43 @@ def get_calendar_event():
     except Exception:
         return None
 
+_wellness_token = None
+_wellness_token_loaded = False
+
+def _get_wellness_token():
+    """Read the wellness bearer token once from ~/wellness.json."""
+    global _wellness_token, _wellness_token_loaded
+    if not _wellness_token_loaded:
+        _wellness_token_loaded = True
+        try:
+            with open(WELLNESS_TOKEN_FILE) as f:
+                _wellness_token = json.load(f).get("token")
+        except Exception:
+            _wellness_token = None
+    return _wellness_token
+
+def get_wellness():
+    """Get wellness vitals (Oura scores, active fast) from daryx-wellness."""
+    token = _get_wellness_token()
+    if not token:
+        return None
+    try:
+        req = urllib.request.Request(
+            WELLNESS_URL,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        resp = urllib.request.urlopen(req, timeout=10)
+        data = json.load(resp)
+        return data.get("data")
+    except Exception:
+        return None
+
 def background_stats_updater():
     """Background thread that updates all stats periodically"""
     global cached_stats
     weather_last_update = 0
     calendar_last_update = 0
+    wellness_last_update = 0
 
     while True:
         try:
@@ -264,6 +302,13 @@ def background_stats_updater():
                 event = get_calendar_event()
                 new_stats["next_event"] = event
                 calendar_last_update = now
+
+            # Wellness vitals (external, update every 5 min)
+            if now - wellness_last_update > WELLNESS_INTERVAL:
+                wellness = get_wellness()
+                if wellness:
+                    new_stats["wellness"] = wellness
+                    wellness_last_update = now
 
             # Update cache atomically
             with stats_lock:

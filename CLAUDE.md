@@ -41,7 +41,7 @@ Desktop ─(5min idle)─► Clock ─(5min idle)─► Dimmed
 **Background Threads (4 total):**
 1. `idle_monitor` - Checks every 5s, triggers state transitions after idle timeouts
 2. `touch_monitor` - Reads raw events from `/dev/input/event4`, updates `last_activity`
-3. `background_stats_updater` - Fetches system/weather/Blocky stats every 10s (weather every 10min)
+3. `background_stats_updater` - Fetches system/weather/Blocky stats every 10s (weather every 10min, wellness every 5min)
 4. `chromium_watchdog` - Checks every 5s, restarts Chromium if it crashes while in clock/dimmed state
 
 **Thread Safety:** Uses `state_lock` for state transitions, `stats_lock` for cached stats. All network calls happen in background threads with timeouts, never blocking HTTP responses.
@@ -64,6 +64,9 @@ IDLE_TO_CLOCK = 300   # 5 min to clock
 IDLE_TO_DIM = 300     # 5 min to dimmed
 DIM_LEVEL = 1         # Minimum (0 disables touch!)
 PORT = 8888
+WELLNESS_URL          # daryx-wellness pi-display endpoint
+WELLNESS_TOKEN_FILE   # ~/wellness.json — {"token": "<PI_DISPLAY_TOKEN>"}
+WELLNESS_INTERVAL = 300   # 5 min between wellness fetches
 ```
 
 Weather location is hardcoded in `get_weather()` function (San Diego).

@@ -172,8 +172,8 @@
         /* Today's plan button (coach agenda) */
         .plan-btn {
             position: fixed;
-            top: 2vh;
-            left: 3vw;
+            bottom: 2vh;
+            right: 3vw;
             font-size: 2.5vw;
             opacity: 0.4;
             color: #fff;
@@ -279,7 +279,7 @@
             -webkit-overflow-scrolling: touch;
             user-select: none;
             -webkit-user-select: none;
-            touch-action: pan-y;
+            touch-action: none;
         }
         .agenda-list::-webkit-scrollbar {
             width: 8px;
@@ -399,27 +399,25 @@
         let agendaScrollIndex = 0;
         const ITEMS_PER_PAGE = 5;
 
-        let touchStartY = 0;
-
         function setupTouchScrolling() {
-            const overlay = document.getElementById('agenda-overlay');
+            const list = document.getElementById('agenda-list');
+            let lastY = null;
 
-            overlay.ontouchstart = function(e) {
-                touchStartY = e.touches[0].clientY;
+            // Direct drag scrolling — reliable on the kiosk touchscreen,
+            // unlike swipe paging or native pan.
+            list.ontouchstart = function(e) {
+                lastY = e.touches[0].clientY;
             };
-
-            overlay.ontouchend = function(e) {
-                const touchEndY = e.changedTouches[0].clientY;
-                const diff = touchStartY - touchEndY;
-
-                // Swipe threshold of 50px
-                if (diff > 50) {
-                    // Swiped up - scroll down
-                    scrollAgenda(1);
-                } else if (diff < -50) {
-                    // Swiped down - scroll up
-                    scrollAgenda(-1);
-                }
+            list.ontouchmove = function(e) {
+                if (lastY === null) return;
+                const y = e.touches[0].clientY;
+                list.scrollTop += lastY - y;
+                lastY = y;
+                e.preventDefault();
+            };
+            list.ontouchend = function() {
+                lastY = null;
+                updateScrollButtons();
             };
         }
 
@@ -502,9 +500,9 @@
 
         function scrollAgenda(direction) {
             const list = document.getElementById('agenda-list');
-            const scrollAmount = 80; // pixels per button press
+            const scrollAmount = 240; // pixels per button press
             list.scrollBy({ top: direction * scrollAmount, behavior: 'smooth' });
-            setTimeout(updateScrollButtons, 100);
+            setTimeout(updateScrollButtons, 150);
         }
 
         function hideAgenda() {

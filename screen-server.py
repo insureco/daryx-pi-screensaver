@@ -22,6 +22,13 @@ try:
 except ImportError:
     CALENDAR_AVAILABLE = False
 
+# Coach agenda merge (pure stdlib - always expected to import)
+try:
+    from coach_agenda import build_agenda_event
+    AGENDA_AVAILABLE = True
+except ImportError:
+    AGENDA_AVAILABLE = False
+
 BACKLIGHT = "/sys/class/backlight/10-0045/brightness"
 TOUCH_DEV = "/dev/input/event4"
 IDLE_TO_CLOCK = 300
@@ -304,6 +311,13 @@ def background_stats_updater():
             # Calendar (external, update every 60s) - skip if test override active
             if now - calendar_last_update > 60 and test_meeting_override is None:
                 event = get_calendar_event()
+                # Today's hero runs off the coach agenda when one exists;
+                # the calendar still supplies tomorrow's view.
+                if AGENDA_AVAILABLE:
+                    with stats_lock:
+                        agenda = (cached_stats.get("wellness") or {}).get("agenda")
+                    if agenda and agenda.get("blocks"):
+                        event = build_agenda_event(agenda["blocks"], event)
                 new_stats["next_event"] = event
                 calendar_last_update = now
 

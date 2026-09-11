@@ -52,6 +52,8 @@ Desktop ─(5min idle)─► Clock ─(5min idle)─► Dimmed
 |------|---------|
 | `screen-server.py` | Python HTTP server, state machine, all background threads |
 | `clock.html` | Dashboard UI (Exo 2 font, fetches `/stats` every 10s) |
+| `coach_agenda.py` | Merges daryx-wellness DailyPlan blocks into the hero `next_event` shape |
+| `google_calendar.py` | Google Calendar fetch (drives tomorrow view; today is coach-agenda-driven when a plan exists) |
 | `labwc-autostart` | Wayland compositor autostart script |
 | `99-backlight.rules` | udev rule for non-root backlight control |
 

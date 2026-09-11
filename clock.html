@@ -169,6 +169,22 @@
             opacity: 0.8;
         }
 
+        /* Today's plan button (coach agenda) */
+        .plan-btn {
+            position: fixed;
+            top: 2vh;
+            left: 3vw;
+            font-size: 2.5vw;
+            opacity: 0.4;
+            color: #fff;
+            padding: 1vw 2vw;
+            z-index: 100;
+            cursor: pointer;
+        }
+        .plan-btn:active {
+            opacity: 0.9;
+        }
+
         .sunset-countdown {
             font-size: 2vw;
             opacity: 0.5;
@@ -313,6 +329,7 @@
 </head>
 <body>
     <a href="/to-desktop" class="close-btn">✕</a>
+    <span class="plan-btn" id="plan-btn" style="display:none" onclick="showAgenda('today')">☰ Plan</span>
 
     <!-- Tomorrow's Agenda Overlay -->
     <div class="agenda-overlay" id="agenda-overlay">
@@ -374,6 +391,8 @@
         let lastEventId = null;
         let tomorrowSummary = null;
         let tomorrowEvents = [];
+        let todayBlocks = [];
+        let agendaMode = 'tomorrow';
         let lastEventData = null;
         let snoozeTickInterval = null;
 
@@ -404,16 +423,17 @@
             };
         }
 
-        function showAgenda() {
+        function showAgenda(mode) {
+            agendaMode = mode === 'today' ? 'today' : 'tomorrow';
             const overlay = document.getElementById('agenda-overlay');
             const title = document.getElementById('agenda-title');
             const list = document.getElementById('agenda-list');
 
-            // Set title to tomorrow's date
-            const tomorrow = new Date();
-            tomorrow.setDate(tomorrow.getDate() + 1);
+            // Set title to the viewed day's date
+            const d = new Date();
+            if (agendaMode === 'tomorrow') d.setDate(d.getDate() + 1);
             const options = { weekday: 'long', month: 'long', day: 'numeric' };
-            title.textContent = tomorrow.toLocaleDateString('en-US', options);
+            title.textContent = (agendaMode === 'today' ? 'Today — ' : '') + d.toLocaleDateString('en-US', options);
 
             // Attach click handlers to scroll buttons
             document.getElementById('scroll-up-btn').onclick = function() { scrollAgenda(-1); };
@@ -431,6 +451,26 @@
 
         function renderAgendaItems() {
             const list = document.getElementById('agenda-list');
+
+            if (agendaMode === 'today') {
+                if (todayBlocks.length === 0) {
+                    list.innerHTML = '<div style="font-size: 3vw; opacity: 0.5; text-align: center; margin-top: 10vh;">No coach plan for today</div>';
+                    return;
+                }
+                let html = '';
+                for (const b of todayBlocks) {
+                    const resolved = b.done || b.skipped || b.declined;
+                    const style = resolved ? 'text-decoration:line-through;opacity:0.4;' : '';
+                    const marker = b.meeting ? '📅 ' : '';
+                    html += '<div class="agenda-item">';
+                    html += '<span class="agenda-time">' + b.start + '–' + b.end + '</span>';
+                    html += '<span class="agenda-event-title" style="' + style + '">' + marker + b.title + '</span>';
+                    html += '</div>';
+                }
+                list.innerHTML = html;
+                updateScrollButtons();
+                return;
+            }
 
             if (tomorrowEvents.length === 0) {
                 list.innerHTML = '<div style="font-size: 3vw; opacity: 0.5; text-align: center; margin-top: 10vh;">No meetings scheduled</div>';
@@ -790,6 +830,12 @@
                 tomorrowSummary = data.next_event.tomorrow_summary || null;
                 tomorrowEvents = data.next_event.tomorrow_events || [];
             }
+
+            // Store today's coach agenda blocks; show the Plan button when present
+            if (data.wellness && data.wellness.agenda) {
+                todayBlocks = data.wellness.agenda.blocks || [];
+            }
+            document.getElementById('plan-btn').style.display = todayBlocks.length ? 'block' : 'none';
 
             updateEventDisplay(data.next_event);
         }

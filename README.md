@@ -5,6 +5,8 @@ Touch-to-wake screensaver with clock dashboard for Raspberry Pi touchscreen runn
 ## Features
 
 - **Clock Dashboard** - Large time display with Exo 2 font
+- **Coach Agenda** - Hero driven by today's daryx-wellness DailyPlan slots (☰ Plan button opens the full-day view); Google Calendar still drives the Tomorrow view
+- **Wellness Strip** - Oura sleep/readiness/HRV + active fast from daryx-wellness (needs `~/wellness.json`)
 - **Weather & Sun Times** - Current temp, conditions, sunrise/sunset from wttr.in
 - **Sunset Countdown** - Live countdown to sunset
 - **System Stats** - CPU temp, memory, uptime
